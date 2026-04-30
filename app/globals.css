@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+  
+  body {
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+
+  /* Forçar que containers ocupem a largura total na impressão */
+  .max-w-7xl {
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  /* Estilização de tabelas e grids para impressão */
+  .grid {
+    display: block !important;
+  }
+
+  /* Seção de lista na impressão */
+  .bg-white {
+    background-color: white !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th, td {
+    border: 1px solid #ddd !important;
+    padding: 8px !important;
+    text-align: left !important;
+  }
+
+  /* Evitar quebras de página no meio de um registro */
+  .rounded-xl {
+    break-inside: avoid !important;
+    margin-bottom: 10px !important;
+    border: 1px solid #eee !important;
+  }
+}
+
+.print-only {
+  display: none;
+}
