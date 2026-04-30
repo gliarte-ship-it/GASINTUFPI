@@ -1295,6 +1295,7 @@ export default function Page() {
               height={128}
               className="h-32 w-auto object-contain"
               priority
+              unoptimized
             />
           </div>
           <h1 className="text-3xl font-medium tracking-tight mb-2">Gestor de Associados</h1>
