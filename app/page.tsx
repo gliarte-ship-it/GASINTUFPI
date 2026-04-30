@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
 import { parseFile, AssociateRecord } from '@/lib/parser';
+import logoSintufpi from '@/public/logo_sintufpi.png';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -1288,10 +1289,11 @@ export default function Page() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <img 
-              src="/logo_sintufpi.png" 
+            <Image 
+              src={logoSintufpi} 
               alt="Logo SINTUFPI" 
               className="h-32 w-auto object-contain mx-auto"
+              priority
             />
           </div>
           <h1 className="text-3xl font-medium tracking-tight mb-2">Gestor de Associados</h1>
