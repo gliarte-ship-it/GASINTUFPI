@@ -1288,10 +1288,13 @@ export default function Page() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <img 
+            <Image 
               src="/logo_sintufpi.png" 
               alt="Logo SINTUFPI" 
+              width={300}
+              height={128}
               className="h-32 w-auto object-contain"
+              priority
             />
           </div>
           <h1 className="text-3xl font-medium tracking-tight mb-2">Gestor de Associados</h1>
@@ -1385,24 +1388,6 @@ export default function Page() {
             {isRegistering ? 'Já tem uma conta? Entrar agora' : 'Primeiro acesso? Crie sua conta aqui'}
           </button>
         </div>
-
-        {/* Google Login for Super User or conditional */}
-        {(loginEmail === 'gliarte@gmail.com' || !loginEmail) && (
-          <div className="mt-8 pt-8 border-t border-zinc-100">
-            <button 
-              onClick={signInWithGoogle}
-              className="w-full flex items-center justify-center gap-2 text-xs text-[#9E9E9E] hover:text-black transition-colors"
-            >
-              <Image 
-                src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" 
-                width={16} 
-                height={16} 
-                alt="Google" 
-              />
-              Entrar como Super-Usuário
-            </button>
-          </div>
-        )}
       </motion.div>
     </div>
   );
