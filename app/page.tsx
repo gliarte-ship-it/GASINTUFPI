@@ -1288,14 +1288,10 @@ export default function Page() {
       >
         <div className="text-center mb-8">
           <div className="flex justify-center mb-6">
-            <Image 
+            <img 
               src="/logo_sintufpi.png" 
               alt="Logo SINTUFPI" 
-              width={300}
-              height={128}
-              className="h-32 w-auto object-contain"
-              priority
-              unoptimized
+              className="h-32 w-auto object-contain mx-auto"
             />
           </div>
           <h1 className="text-3xl font-medium tracking-tight mb-2">Gestor de Associados</h1>
