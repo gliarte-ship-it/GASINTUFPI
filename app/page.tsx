@@ -692,7 +692,7 @@ export default function Page() {
   };
 
   const handleExportComparison = () => {
-    const title = diffType === 'included' ? 'Associados Incluídos' : 'Associados Excluídos';
+    const title = diffType === 'included' ? 'Filiações' : 'Desfiliações';
     
     logActivity('Exportação de Comparação (PDF)', `Tipo: ${title}`);
 
@@ -1672,7 +1672,7 @@ export default function Page() {
           )}
   
             <div className="bg-white p-6 rounded-[24px] shadow-sm border border-zinc-100">
-              <h2 className="text-sm font-semibold uppercase tracking-widest text-[#9E9E9E] mb-4">Associados Incluídos e Excluídos</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-widest text-[#9E9E9E] mb-4">HISTÓRICO DE FILIAÇÕES E DESFILIAÇÕES</h2>
               <div className="space-y-4">
                 <div>
                   <label className="text-xs font-medium mb-1 block">Lista 1</label>
@@ -1703,15 +1703,15 @@ export default function Page() {
                 <div className="grid grid-cols-2 gap-2 pt-2">
                   <button 
                     onClick={() => compareReports('included')}
-                    className="bg-black text-white text-xs font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-zinc-800 transition-colors"
+                    className="bg-green-600 text-white text-xs font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-700 transition-colors"
                   >
-                    <TrendingUp className="w-4 h-4" /> Incluídos
+                    <TrendingUp className="w-4 h-4" /> Filiações
                   </button>
                   <button 
                     onClick={() => compareReports('excluded')}
                     className="bg-red-600 text-white text-xs font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
                   >
-                    <TrendingDown className="w-4 h-4" /> Excluídos
+                    <TrendingDown className="w-4 h-4" /> Desfiliações
                   </button>
                 </div>
               </div>
@@ -2575,7 +2575,7 @@ export default function Page() {
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="print-only mb-8 text-center border-b pb-4 w-full">
                     <h1 className="text-2xl font-bold uppercase">SINTUFPI - Gestor de Associados</h1>
-                    <h2 className="text-xl mt-2">Relatório: {diffType === 'included' ? 'Associados Incluídos' : 'Associados Excluídos'}</h2>
+                    <h2 className="text-xl mt-2">Relatório: {diffType === 'included' ? 'Filiações' : 'Desfiliações'}</h2>
                     <p className="text-sm text-zinc-500 mt-1">Gerado em {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR')}</p>
                   </div>
 
@@ -2588,7 +2588,7 @@ export default function Page() {
                     </button>
                     <div>
                       <h2 className="text-xl font-bold tracking-tight">
-                        {diffType === 'included' ? 'Associados Incluídos' : 'Associados Excluídos'}
+                        {diffType === 'included' ? 'Filiações' : 'Desfiliações'}
                       </h2>
                       <p className="text-xs text-[#9E9E9E]">Comparação de listas</p>
                     </div>
