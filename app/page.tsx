@@ -5,7 +5,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { 
   Plus, Download, FolderOpen, ListFilter, Users, ArrowBigRight, 
   TrendingUp, TrendingDown, LogOut, FileSpreadsheet, LogIn,
-  Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, Search,
+  Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, Search, Info,
   User as UserIcon, Shield, ShieldAlert, ShieldCheck, Upload, Image as ImageIcon,
   Printer, FileText, Key
 } from 'lucide-react';
@@ -52,6 +52,8 @@ export default function Page() {
   // User management states
   const [allUsers, setAllUsers] = useState<any[]>([]);
   const [systemLogs, setSystemLogs] = useState<any[]>([]);
+  const [isAdminConfigured, setIsAdminConfigured] = useState<boolean | null>(null);
+  const [isCheckingConfig, setIsCheckingConfig] = useState(false);
 
   const logActivity = useCallback(async (action: string, details?: string) => {
     if (!user) return;
@@ -125,6 +127,23 @@ export default function Page() {
   const fetchUsers = useCallback(async () => {
     if (!isStaff) return;
     
+    // Check config if not already checked or if viewing users
+    if (isAdminConfigured === null && !isCheckingConfig && isDirector) {
+      setIsCheckingConfig(true);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/admin/check-config', {
+          headers: { 'Authorization': `Bearer ${session?.access_token}` }
+        });
+        const result = await response.json();
+        setIsAdminConfigured(result.isConfigured);
+      } catch (e) {
+        console.error('Error checking admin config:', e);
+      } finally {
+        setIsCheckingConfig(false);
+      }
+    }
+
     let q = supabase.from('profiles').select('*');
     
     if (isSuperAdmin) {
@@ -145,7 +164,7 @@ export default function Page() {
     } else {
       setAllUsers(data || []);
     }
-  }, [user, isSuperAdmin, isDirector, isStaff]);
+  }, [user, isSuperAdmin, isDirector, isStaff, isAdminConfigured, isCheckingConfig]);
 
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -326,6 +345,9 @@ export default function Page() {
         const result = await response.json();
 
         if (!response.ok) {
+          if (result.error?.includes('SUPABASE_SERVICE_ROLE_KEY')) {
+            throw new Error('Configuração Incompleta: O servidor não possui a chave administrativa necessária. Por favor, adicione a "SUPABASE_SERVICE_ROLE_KEY" nas configurações de ambiente do projeto no AI Studio para habilitar a exclusão completa de usuários.');
+          }
           throw new Error(result.error || 'Erro ao excluir usuário');
         }
 
@@ -2197,6 +2219,30 @@ export default function Page() {
                     </div>
                   </div>
                 </div>
+
+                <AnimatePresence>
+                  {isAdminConfigured === false && isDirector && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex gap-4 items-start shadow-sm"
+                    >
+                      <div className="p-2 bg-amber-100 text-amber-600 rounded-xl">
+                        <ShieldAlert className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="text-sm font-bold text-amber-900 mb-1 leading-tight">Configuração Administrativa Pendente</h4>
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          A exclusão de usuários e alteração de senhas exige a configuração da chave <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">SUPABASE_SERVICE_ROLE_KEY</code> nas configurações do ambiente (menu lateral de engrenagem). 
+                          <span className="block mt-1 font-medium italic">Sem esta chave, você só poderá bloquear o acesso, mas não poderá remover o registro permanentemente.</span>
+                        </p>
+                      </div>
+                      <div className="text-[10px] bg-amber-200/50 px-2 py-1 rounded-lg text-amber-600 font-bold uppercase tracking-tighter">
+                        Importante
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 <AnimatePresence>
                   {isCreatingUser && isDirector && (
