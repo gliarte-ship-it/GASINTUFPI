@@ -182,7 +182,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: pass,
         options: {
           data: { full_name: name, level: level },
-          emailRedirectTo: window.location.origin
+          emailRedirectTo: 'https://gasintufpi.vercel.app/'
         }
       });
       

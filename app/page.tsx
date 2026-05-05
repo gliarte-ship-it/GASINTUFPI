@@ -173,17 +173,25 @@ export default function Page() {
 
   useEffect(() => {
     // Check for email confirmation or specific messages in URL
-    const hash = window.location.hash;
-    if (hash && hash.includes('access_token')) {
-      // Supabase confirmed the email and logged in the user automatically
-      const alertShown = sessionStorage.getItem('confirmation_alert_shown');
-      if (!alertShown) {
-        alert('E-mail confirmado com sucesso! Bem-vindo ao sistema.');
-        sessionStorage.setItem('confirmation_alert_shown', 'true');
-        // Clean hash from URL
-        window.history.replaceState(null, '', window.location.pathname);
+    const checkConfirmation = () => {
+      const hash = window.location.hash;
+      const search = window.location.search;
+      
+      // If it contains access_token or a type=signup param from Supabase
+      if (hash.includes('access_token') || search.includes('type=signup') || search.includes('type=recovery')) {
+        const alertShown = sessionStorage.getItem('confirmation_alert_shown');
+        if (!alertShown) {
+          setTimeout(() => {
+            alert('✓ E-mail confirmado com sucesso!\nSua conta está ativa e você já pode acessar o sistema.');
+            sessionStorage.setItem('confirmation_alert_shown', 'true');
+            // Clean URL
+            window.history.replaceState(null, '', window.location.pathname);
+          }, 1000); // Small delay to ensure page is fully loaded
+        }
       }
-    }
+    };
+
+    checkConfirmation();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
