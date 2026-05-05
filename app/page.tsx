@@ -267,6 +267,8 @@ export default function Page() {
       if (error) throw error;
       
       await logActivity('Criou usuário', `Email: ${newUserEmail}, Cargo: ${newUserRole}`);
+      alert(`✓ Usuário ${newUserEmail} pré-cadastrado com sucesso!`);
+      fetchUsers();
       setIsCreatingUser(false);
       setNewUserEmail('');
       setNewUserName('');
@@ -311,6 +313,7 @@ export default function Page() {
       }
       const targetUser = allUsers.find(u => u.id === id);
       await logActivity(is_authorized ? 'Autorizou usuário' : 'Desautorizou usuário', `Usuário: ${targetUser?.email || id}`);
+      alert(`✓ Status atualizado: O usuário ${targetUser?.name || targetUser?.email} agora está ${is_authorized ? 'AUTORIZADO' : 'BLOQUEADO'}.`);
     } catch (err: any) {
       console.error('Error updating authorization:', err);
       alert('Erro ao atualizar autorização: ' + (err.message || 'Erro desconhecido'));
@@ -346,12 +349,13 @@ export default function Page() {
 
         if (!response.ok) {
           if (result.error?.includes('SUPABASE_SERVICE_ROLE_KEY')) {
-            throw new Error('Configuração Incompleta: O servidor não possui a chave administrativa necessária. Por favor, adicione a "SUPABASE_SERVICE_ROLE_KEY" nas configurações de ambiente do projeto no AI Studio para habilitar a exclusão completa de usuários.');
+            throw new Error('Configuração Incompleta: O servidor não possui a chave administrativa necessária. Se você estiver usando o Vercel, adicione "SUPABASE_SERVICE_ROLE_KEY" nas configurações de Environment Variables do projeto no Vercel. Se estiver no AI Studio, adicione-a no menu de engrenagem lateral.');
           }
           throw new Error(result.error || 'Erro ao excluir usuário');
         }
 
         await logActivity('Excluiu usuário permanentemente', `Usuário: ${targetUser?.email || id}`);
+        alert(`✓ Sucesso: O usuário ${targetUser?.name || targetUser?.email} foi removido permanentemente do sistema.`);
       } catch (err: any) {
         console.error('Error deleting user:', err);
         setAllUsers(originalUsers);
@@ -2221,7 +2225,7 @@ export default function Page() {
                 </div>
 
                 <AnimatePresence>
-                  {isAdminConfigured === false && isDirector && (
+                  {isAdminConfigured === false && isSuperAdmin && (
                     <motion.div
                       initial={{ opacity: 0, y: -10 }}
                       animate={{ opacity: 1, y: 0 }}
@@ -2233,7 +2237,7 @@ export default function Page() {
                       <div className="flex-1">
                         <h4 className="text-sm font-bold text-amber-900 mb-1 leading-tight">Configuração Administrativa Pendente</h4>
                         <p className="text-xs text-amber-700 leading-relaxed">
-                          A exclusão de usuários e alteração de senhas exige a configuração da chave <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">SUPABASE_SERVICE_ROLE_KEY</code> nas configurações do ambiente (menu lateral de engrenagem). 
+                          A exclusão de usuários e alteração de senhas exige a configuração da chave <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">SUPABASE_SERVICE_ROLE_KEY</code> nas configurações do ambiente (menu lateral de engrenagem no AI Studio, ou Configurações no Vercel). 
                           <span className="block mt-1 font-medium italic">Sem esta chave, você só poderá bloquear o acesso, mas não poderá remover o registro permanentemente.</span>
                         </p>
                       </div>
