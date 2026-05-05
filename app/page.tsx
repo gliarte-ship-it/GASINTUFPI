@@ -354,8 +354,14 @@ export default function Page() {
           throw new Error(result.error || 'Erro ao excluir usuário');
         }
 
-        await logActivity('Excluiu usuário permanentemente', `Usuário: ${targetUser?.email || id}`);
+        // Only alert and log if server confirmed
         alert(`✓ Sucesso: O usuário ${targetUser?.name || targetUser?.email} foi removido permanentemente do sistema.`);
+        
+        // Log activity non-blocking to avoid UI delay
+        logActivity('Excluiu usuário permanentemente', `Usuário: ${targetUser?.email || id}`).catch(console.error);
+        
+        // Refresh to ensure sync
+        fetchUsers();
       } catch (err: any) {
         console.error('Error deleting user:', err);
         setAllUsers(originalUsers);
