@@ -171,6 +171,21 @@ export default function Page() {
     await logout();
   };
 
+  useEffect(() => {
+    // Check for email confirmation or specific messages in URL
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token')) {
+      // Supabase confirmed the email and logged in the user automatically
+      const alertShown = sessionStorage.getItem('confirmation_alert_shown');
+      if (!alertShown) {
+        alert('E-mail confirmado com sucesso! Bem-vindo ao sistema.');
+        sessionStorage.setItem('confirmation_alert_shown', 'true');
+        // Clean hash from URL
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
