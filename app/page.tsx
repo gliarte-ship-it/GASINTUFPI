@@ -123,12 +123,18 @@ export default function Page() {
   };
 
   const fetchUsers = useCallback(async () => {
-    if (!isDirector) return;
+    if (!isStaff) return;
     
     let q = supabase.from('profiles').select('*');
     
-    if (!isSuperAdmin) {
+    if (isSuperAdmin) {
+      // Super Admin enxerga todos
+    } else if (isDirector) {
+      // Diretores enxergam outros diretores e funcionários
       q = q.in('role', ['DIRECTOR', 'STAFF']);
+    } else {
+      // Funcionários enxergam apenas a si mesmos
+      q = q.eq('id', user?.id);
     }
     
     q = q.order('created_at', { ascending: false });
@@ -139,7 +145,7 @@ export default function Page() {
     } else {
       setAllUsers(data || []);
     }
-  }, [isDirector, isSuperAdmin]);
+  }, [user, isSuperAdmin, isDirector, isStaff]);
 
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -176,7 +182,7 @@ export default function Page() {
   };
 
   useEffect(() => {
-    if (view === 'users' && isDirector) {
+    if (view === 'users' && isStaff) {
       setTimeout(() => fetchUsers(), 0);
       
       const channel = supabase
@@ -188,7 +194,7 @@ export default function Page() {
         supabase.removeChannel(channel);
       };
     }
-  }, [view, isDirector, fetchUsers]);
+  }, [view, isStaff, fetchUsers]);
 
   useEffect(() => {
     if (view === 'logs' && isSuperAdmin) {
@@ -203,6 +209,10 @@ export default function Page() {
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isDirector) {
+      alert('Você não tem permissão para criar usuários.');
+      return;
+    }
     if (!newUserEmail || !newUserRole) return;
     try {
       const { error } = await supabase.from('profiles').insert({
@@ -416,10 +426,11 @@ export default function Page() {
     }
 
     // Optimistic update
-    setAllUsers(current => current.map(u => u.id === id ? { ...u, role } : u));
+    const newLevel = role === 'SUPER_ADMIN' ? 'SUPER-USUARIO' : (role === 'DIRECTOR' ? 'Diretoria' : 'Funcionário');
+    setAllUsers(current => current.map(u => u.id === id ? { ...u, role, level: newLevel } : u));
     
     try {
-      const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
+      const { error } = await supabase.from('profiles').update({ role, level: newLevel }).eq('id', id);
       if (error) {
         fetchUsers();
         throw error;
@@ -1599,7 +1610,7 @@ export default function Page() {
             </button>
           )}
 
-          {isDirector && (
+          {isStaff && (
             <button 
               onClick={() => setView('users')}
               className={`p-3 rounded-2xl transition-all ${view === 'users' ? 'bg-black text-white shadow-lg shadow-black/10' : 'bg-white text-[#9E9E9E] hover:bg-zinc-100 hover:text-black border border-zinc-100'}`}
@@ -2165,7 +2176,7 @@ export default function Page() {
                 </div>
 
                 <AnimatePresence>
-                  {isCreatingUser && (
+                  {isCreatingUser && isDirector && (
                     <motion.form 
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: 'auto' }}
@@ -2295,57 +2306,59 @@ export default function Page() {
                                   )}
                                 </div>
                             </td>
-                            <td className="p-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                {/* Autorização toggle */}
-                                <button 
-                                  onClick={() => updateUserAuthorization(u.id, !u.is_authorized)}
-                                  className={`p-2 rounded-lg transition-colors ${u.is_authorized ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
-                                  title={u.is_authorized ? 'Bloquear Acesso' : 'Autorizar Acesso'}
-                                >
-                                  {u.is_authorized ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                                </button>
-
-                                 {/* Permissão de delegar para Diretoria: Supervisor ou Admin */}
-                                {u.role === 'STAFF' && (
-                                  <button 
-                                    onClick={() => updateUserRole(u.id, 'DIRECTOR')}
-                                    className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition-colors"
-                                    title="Tornar Diretoria"
-                                  >
-                                    <TrendingUp className="w-4 h-4" />
-                                  </button>
-                                )}
-
-                                {/* Alterar Senha: Admin ou Próprio Usuário */}
-                                {(isSuperAdmin || u.id === user?.id) && (
-                                  <button 
-                                    onClick={() => {
-                                      setPasswordTargetUserId(u.id);
-                                      setIsChangingPassword(true);
-                                    }}
-                                    className="p-2 hover:bg-zinc-100 text-[#9E9E9E] hover:text-black rounded-lg transition-colors"
-                                    title="Alterar Senha"
-                                  >
-                                    <Key className="w-4 h-4" />
-                                  </button>
-                                )}
-
-                                {u.email !== 'gliarte@gmail.com' ? (
-                                  <button 
-                                    onClick={() => deleteUser(u.id)}
-                                    className="p-2 hover:bg-red-50 text-[#9E9E9E] hover:text-red-600 rounded-lg transition-colors"
-                                    title="Excluir Usuário"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                ) : (
-                                  <div className="p-2 text-zinc-300" title="Usuário Protegido">
-                                    <ShieldAlert className="w-4 h-4" />
-                                  </div>
-                                )}
-                              </div>
-                            </td>
+                             <td className="p-4 text-right">
+                               <div className="flex items-center justify-end gap-2">
+                                 {/* Autorização toggle - Apenas Diretores/Admins */}
+                                 {isDirector && (
+                                   <button 
+                                     onClick={() => updateUserAuthorization(u.id, !u.is_authorized)}
+                                     className={`p-2 rounded-lg transition-colors ${u.is_authorized ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
+                                     title={u.is_authorized ? 'Bloquear Acesso' : 'Autorizar Acesso'}
+                                   >
+                                     {u.is_authorized ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                                   </button>
+                                 )}
+ 
+                                  {/* Permissão de delegar para Diretoria: Supervisor ou Admin */}
+                                 {isDirector && u.role === 'STAFF' && (
+                                   <button 
+                                     onClick={() => updateUserRole(u.id, 'DIRECTOR')}
+                                     className="p-2 hover:bg-green-50 text-green-600 rounded-lg transition-colors"
+                                     title="Tornar Diretoria"
+                                   >
+                                     <TrendingUp className="w-4 h-4" />
+                                   </button>
+                                 )}
+ 
+                                 {/* Alterar Senha: Admin ou Próprio Usuário */}
+                                 {(isSuperAdmin || u.id === user?.id) && (
+                                   <button 
+                                     onClick={() => {
+                                       setPasswordTargetUserId(u.id);
+                                       setIsChangingPassword(true);
+                                     }}
+                                     className="p-2 hover:bg-zinc-100 text-[#9E9E9E] hover:text-black rounded-lg transition-colors"
+                                     title="Alterar Senha"
+                                   >
+                                     <Key className="w-4 h-4" />
+                                   </button>
+                                 )}
+ 
+                                 {isDirector && u.email !== 'gliarte@gmail.com' ? (
+                                   <button 
+                                     onClick={() => deleteUser(u.id)}
+                                     className="p-2 hover:bg-red-50 text-[#9E9E9E] hover:text-red-600 rounded-lg transition-colors"
+                                     title="Excluir Usuário"
+                                   >
+                                     <Trash2 className="w-4 h-4" />
+                                   </button>
+                                 ) : u.email === 'gliarte@gmail.com' ? (
+                                   <div className="p-2 text-zinc-300" title="Usuário Protegido">
+                                     <ShieldAlert className="w-4 h-4" />
+                                   </div>
+                                 ) : null}
+                               </div>
+                             </td>
                           </tr>
                         ))}
                       </tbody>
