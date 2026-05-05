@@ -1700,18 +1700,20 @@ export default function Page() {
                     ))}
                   </select>
                 </div>
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                <div className="flex w-full space-x-2 pt-2">
                   <button 
                     onClick={() => compareReports('included')}
-                    className="bg-green-600 text-white text-xs font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-green-700 transition-colors"
+                    className="flex-1 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center hover:opacity-90"
+                    style={{ backgroundColor: '#16A34A', border: '1px solid #16A34A' }}
                   >
-                    <TrendingUp className="w-4 h-4" /> Filiações
+                    <TrendingUp className="w-4 h-4 mr-2" /> Filiações
                   </button>
                   <button 
                     onClick={() => compareReports('excluded')}
-                    className="bg-red-600 text-white text-xs font-medium py-3 rounded-xl flex items-center justify-center gap-2 hover:bg-red-700 transition-colors"
+                    className="flex-1 text-white text-xs font-bold py-3 rounded-xl flex items-center justify-center hover:opacity-90"
+                    style={{ backgroundColor: '#DC2626', border: '1px solid #DC2626' }}
                   >
-                    <TrendingDown className="w-4 h-4" /> Desfiliações
+                    <TrendingDown className="w-4 h-4 mr-2" /> Desfiliações
                   </button>
                 </div>
               </div>
