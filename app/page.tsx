@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, LogOut, FileSpreadsheet, LogIn,
   Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, Search,
   User as UserIcon, Shield, ShieldAlert, ShieldCheck, Upload, Image as ImageIcon,
-  Printer, FileText
+  Printer, FileText, Key
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
@@ -149,6 +149,12 @@ export default function Page() {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
 
+  // Password change states
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordTargetUserId, setPasswordTargetUserId] = useState<string | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
   const handleLogout = async () => {
     setLoginEmail('');
     setLoginPass('');
@@ -204,7 +210,7 @@ export default function Page() {
         name: newUserName,
         role: newUserRole,
         is_authorized: true,
-        level: newUserRole === 'STAFF' ? 'Funcionário' : 'Diretoria'
+        level: newUserRole === 'SUPER_ADMIN' ? 'SUPER-USUARIO' : (newUserRole === 'STAFF' ? 'Funcionário' : 'Diretoria')
       });
       if (error) throw error;
       
@@ -234,6 +240,13 @@ export default function Page() {
   };
 
   const updateUserAuthorization = async (id: string, is_authorized: boolean) => {
+    const targetUser = allUsers.find(u => u.id === id);
+    
+    if (targetUser?.email === 'gliarte@gmail.com') {
+      alert('Este usuário é protegido e suas permissões não podem ser alteradas.');
+      return;
+    }
+
     // Optimistic update
     setAllUsers(current => current.map(u => u.id === id ? { ...u, is_authorized } : u));
     
@@ -253,21 +266,40 @@ export default function Page() {
   };
 
   const deleteUser = async (id: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este usuário?')) {
+    const targetUser = allUsers.find(u => u.id === id);
+    
+    if (targetUser?.email === 'gliarte@gmail.com') {
+      alert('Este usuário é protegido e não pode ser excluído.');
+      return;
+    }
+
+    if (window.confirm(`Tem certeza que deseja excluir o usuário ${targetUser?.name || targetUser?.email}? Esta ação também removerá o acesso dele do Supabase Auth.`)) {
       const originalUsers = [...allUsers];
-      const targetUser = allUsers.find(u => u.id === id);
       // Optimistic delete
       setAllUsers(current => current.filter(u => u.id !== id));
       
       try {
-        const { error } = await supabase.from('profiles').delete().eq('id', id);
-        if (error) {
-          setAllUsers(originalUsers);
-          throw error;
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({ userId: id, requesterId: user?.id })
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || 'Erro ao excluir usuário');
         }
-        await logActivity('Excluiu usuário', `Usuário: ${targetUser?.email || id}`);
+
+        await logActivity('Excluiu usuário permanentemente', `Usuário: ${targetUser?.email || id}`);
       } catch (err: any) {
         console.error('Error deleting user:', err);
+        setAllUsers(originalUsers);
         alert('Erro ao excluir usuário: ' + (err.message || 'Erro desconhecido'));
       }
     }
@@ -376,6 +408,13 @@ export default function Page() {
   };
 
   const updateUserRole = async (id: string, role: string) => {
+    const targetUser = allUsers.find(u => u.id === id);
+    
+    if (targetUser?.email === 'gliarte@gmail.com') {
+      alert('Este usuário é protegido e seu cargo não pode ser alterado.');
+      return;
+    }
+
     // Optimistic update
     setAllUsers(current => current.map(u => u.id === id ? { ...u, role } : u));
     
@@ -390,6 +429,55 @@ export default function Page() {
     } catch (err: any) {
       console.error('Error updating role:', err);
       alert('Erro ao atualizar cargo: ' + (err.message || 'Erro desconhecido'));
+    }
+  };
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordTargetUserId || !newPasswordValue || newPasswordValue.length < 6) {
+      alert('A senha deve ter pelo menos 6 caracteres.');
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      const targetUser = allUsers.find(u => u.id === passwordTargetUserId) || { id: user?.id, email: user?.email };
+      const isSelf = passwordTargetUserId === user?.id;
+
+      if (isSelf) {
+        // User updating their own password
+        const { error } = await supabase.auth.updateUser({ password: newPasswordValue });
+        if (error) throw error;
+      } else if (isSuperAdmin) {
+        // Super Admin updating another user's password
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch('/api/admin/update-password', {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({ userId: passwordTargetUserId, newPassword: newPasswordValue })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Erro ao atualizar senha');
+        }
+      } else {
+        throw new Error('Você não tem permissão para alterar a senha deste usuário.');
+      }
+
+      await logActivity('Alterou senha', `Usuário: ${targetUser?.email || passwordTargetUserId}`);
+      alert('Senha atualizada com sucesso!');
+      setIsChangingPassword(false);
+      setPasswordTargetUserId(null);
+      setNewPasswordValue('');
+    } catch (err: any) {
+      console.error('Error updating password:', err);
+      alert('Erro ao atualizar senha: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
   
@@ -2074,13 +2162,6 @@ export default function Page() {
                       </div>
                     </div>
                   </div>
-                  <button 
-                    onClick={() => setIsCreatingUser(!isCreatingUser)}
-                    className="bg-black text-white px-5 py-2.5 rounded-full text-sm font-medium flex items-center gap-2 hover:bg-zinc-800 transition-all shadow-lg shadow-black/5"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Novo Usuário
-                  </button>
                 </div>
 
                 <AnimatePresence>
@@ -2225,7 +2306,7 @@ export default function Page() {
                                   {u.is_authorized ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
                                 </button>
 
-                                {/* Permissão de delegar para Diretoria: Supervisor ou Admin */}
+                                 {/* Permissão de delegar para Diretoria: Supervisor ou Admin */}
                                 {u.role === 'STAFF' && (
                                   <button 
                                     onClick={() => updateUserRole(u.id, 'DIRECTOR')}
@@ -2235,13 +2316,34 @@ export default function Page() {
                                     <TrendingUp className="w-4 h-4" />
                                   </button>
                                 )}
-                                <button 
-                                  onClick={() => deleteUser(u.id)}
-                                  className="p-2 hover:bg-red-50 text-[#9E9E9E] hover:text-red-600 rounded-lg transition-colors"
-                                  title="Excluir Usuário"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+
+                                {/* Alterar Senha: Admin ou Próprio Usuário */}
+                                {(isSuperAdmin || u.id === user?.id) && (
+                                  <button 
+                                    onClick={() => {
+                                      setPasswordTargetUserId(u.id);
+                                      setIsChangingPassword(true);
+                                    }}
+                                    className="p-2 hover:bg-zinc-100 text-[#9E9E9E] hover:text-black rounded-lg transition-colors"
+                                    title="Alterar Senha"
+                                  >
+                                    <Key className="w-4 h-4" />
+                                  </button>
+                                )}
+
+                                {u.email !== 'gliarte@gmail.com' ? (
+                                  <button 
+                                    onClick={() => deleteUser(u.id)}
+                                    className="p-2 hover:bg-red-50 text-[#9E9E9E] hover:text-red-600 rounded-lg transition-colors"
+                                    title="Excluir Usuário"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                ) : (
+                                  <div className="p-2 text-zinc-300" title="Usuário Protegido">
+                                    <ShieldAlert className="w-4 h-4" />
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -2250,6 +2352,70 @@ export default function Page() {
                     </table>
                   </div>
                 </div>
+
+                {/* Modal de Alteração de Senha */}
+                <AnimatePresence>
+                  {isChangingPassword && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                        className="bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden"
+                      >
+                        <form onSubmit={handleUpdatePassword} className="p-8">
+                          <div className="flex items-center gap-4 mb-6">
+                            <div className="p-3 bg-zinc-100 rounded-2xl">
+                              <Key className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-xl font-bold">Alterar Senha</h3>
+                              <p className="text-xs text-[#9E9E9E]">
+                                {allUsers.find(u => u.id === passwordTargetUserId)?.name || allUsers.find(u => u.id === passwordTargetUserId)?.email || 'Usuário'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <label className="text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] mb-1 block px-1">Nova Senha</label>
+                              <input 
+                                required
+                                type="password"
+                                autoComplete="new-password"
+                                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-black/5 outline-none transition-all"
+                                placeholder="Mínimo 6 caracteres"
+                                value={newPasswordValue}
+                                onChange={(e) => setNewPasswordValue(e.target.value)}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-3 mt-8">
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                setIsChangingPassword(false);
+                                setPasswordTargetUserId(null);
+                                setNewPasswordValue('');
+                              }}
+                              className="flex-1 px-6 py-3.5 bg-zinc-100 text-black rounded-2xl text-sm font-bold uppercase tracking-widest hover:bg-zinc-200 transition-all font-mono"
+                            >
+                              Cancelar
+                            </button>
+                            <button 
+                              type="submit"
+                              disabled={isUpdatingPassword}
+                              className="flex-[2] px-6 py-3.5 bg-black text-white rounded-2xl text-sm font-bold uppercase tracking-widest hover:bg-zinc-800 transition-all shadow-lg shadow-black/10 disabled:opacity-50 font-mono"
+                            >
+                              {isUpdatingPassword ? 'Salvando...' : 'Confirmar'}
+                            </button>
+                          </div>
+                        </form>
+                      </motion.div>
+                    </div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             ) : view === 'logs' && isSuperAdmin ? (
               <motion.div 

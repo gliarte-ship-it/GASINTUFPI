@@ -42,66 +42,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSigningIn, setIsSigningIn] = useState(false);
 
   async function handleAuthChange(session: Session | null) {
-    const newUser = session?.user ?? null;
-    setUser(newUser);
-    
-    if (newUser) {
-      // Fetch profile
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', newUser.id)
-        .single();
+    try {
+      const newUser = session?.user ?? null;
+      setUser(newUser);
       
-      if (data) {
-        // Force SUPER_ADMIN for gliarte if it's not set in DB yet
-        if (newUser.email === 'gliarte@gmail.com' && (data.role !== 'SUPER_ADMIN' || !data.is_authorized)) {
-          await supabase.from('profiles').update({ role: 'SUPER_ADMIN', is_authorized: true }).eq('id', newUser.id);
-          data.role = 'SUPER_ADMIN';
-          data.is_authorized = true;
-        }
-        setProfile(data as UserProfile);
-      } else if (newUser.email === 'gliarte@gmail.com') {
-        // Auto-create for gliarte
-        const { data: newProfile, error: insertError } = await supabase
+      if (newUser) {
+        // Fetch profile
+        const { data, error } = await supabase
           .from('profiles')
-          .insert({
-            id: newUser.id,
-            email: newUser.email,
-            name: newUser.user_metadata?.full_name || 'Super User',
-            role: 'SUPER_ADMIN',
-            is_authorized: true,
-            level: 'Diretoria'
-          })
-          .select()
+          .select('*')
+          .eq('id', newUser.id)
           .single();
         
-        if (newProfile) setProfile(newProfile as UserProfile);
+        if (data) {
+          // Force SUPER_ADMIN for gliarte if it's not set in DB yet
+          if (newUser.email === 'gliarte@gmail.com' && (data.role !== 'SUPER_ADMIN' || !data.is_authorized || data.level !== 'SUPER-USUARIO')) {
+            await supabase.from('profiles').update({ 
+              role: 'SUPER_ADMIN', 
+              is_authorized: true,
+              level: 'SUPER-USUARIO'
+            }).eq('id', newUser.id);
+            data.role = 'SUPER_ADMIN';
+            data.is_authorized = true;
+            data.level = 'SUPER-USUARIO';
+          }
+          setProfile(data as UserProfile);
+        } else if (newUser.email === 'gliarte@gmail.com') {
+          // Auto-create for gliarte
+          const { data: newProfile, error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              id: newUser.id,
+              email: newUser.email,
+              name: newUser.user_metadata?.full_name || 'Super User',
+              role: 'SUPER_ADMIN',
+              is_authorized: true,
+              level: 'SUPER-USUARIO'
+            })
+            .select()
+            .single();
+          
+          if (newProfile) setProfile(newProfile as UserProfile);
+        } else {
+          setProfile(null);
+        }
       } else {
         setProfile(null);
       }
-    } else {
+    } catch (error) {
+      console.error('Error in handleAuthChange:', error);
       setProfile(null);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   }
 
   useEffect(() => {
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      if (error) {
-        console.error('Erro ao obter sessão inicial:', error.message);
-        if (error.message.includes('Refresh Token Not Found')) {
-          console.warn('Token de atualização expirado ou inválido. Limpando sessão...');
-          supabase.auth.signOut().then(() => {
+    const getInitialSession = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Erro ao obter sessão inicial:', error.message);
+          if (error.message.includes('Refresh Token Not Found') || error.message.includes('invalid_grant')) {
+            console.warn('Token de atualização expirado ou inválido. Limpando sessão...');
+            await supabase.auth.signOut();
             handleAuthChange(null);
-          });
-          return;
+          } else {
+            handleAuthChange(null);
+          }
+        } else {
+          handleAuthChange(session);
         }
+      } catch (err) {
+        console.error('Erro inesperado ao verificar sessão:', err);
+        handleAuthChange(null);
+      } finally {
+        setLoading(false);
       }
-      handleAuthChange(session);
-    });
+    };
+
+    getInitialSession();
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
