@@ -5,9 +5,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { 
   Plus, Download, FolderOpen, ListFilter, Users, ArrowBigRight, 
   TrendingUp, TrendingDown, LogOut, FileSpreadsheet, LogIn,
-  Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, Search, Info,
+  Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, ArrowRight, Search, Info,
   User as UserIcon, Shield, ShieldAlert, ShieldCheck, Upload, Image as ImageIcon,
-  Printer, FileText, Key
+  Printer, FileText, Key, Loader2, Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { parseFile, AssociateRecord } from '@/lib/parser';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import * as XLSX from 'xlsx';
 
 
 export default function Page() {
@@ -551,6 +552,8 @@ export default function Page() {
   const [editingReport, setEditingReport] = useState<any>(null);
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null);
   const [detailedAssociates, setDetailedAssociates] = useState<any[]>([]);
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null);
+  const [downloadingShareableId, setDownloadingShareableId] = useState<string | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState('');
@@ -665,14 +668,27 @@ export default function Page() {
     const { data, error } = await supabase
       .from('reports')
       .select('*')
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
       .order('uploaded_at', { ascending: false });
     
     if (error) {
       console.error(error);
     } else {
-      setReports(data || []);
+      // Ordenação numérica cronológica correta: Ano mais recente primeiro, e Mês mais recente primeiro (ex: 12, 11, 10, 09, 08...)
+      const sorted = (data || []).sort((a: any, b: any) => {
+        const yearA = typeof a.year === 'number' ? a.year : parseInt(a.year, 10) || 0;
+        const yearB = typeof b.year === 'number' ? b.year : parseInt(b.year, 10) || 0;
+        if (yearB !== yearA) return yearB - yearA;
+
+        const monthA = typeof a.month === 'number' ? a.month : parseInt(a.month, 10) || 0;
+        const monthB = typeof b.month === 'number' ? b.month : parseInt(b.month, 10) || 0;
+        if (monthB !== monthA) return monthB - monthA;
+
+        const timeA = new Date(a.uploaded_at || a.created_at || 0).getTime();
+        const timeB = new Date(b.uploaded_at || b.created_at || 0).getTime();
+        return timeB - timeA;
+      });
+
+      setReports(sorted);
       setHistoryPage(1);
     }
   }, [user]);
@@ -897,6 +913,250 @@ export default function Page() {
     );
   };
 
+  const exportReportToExcel = async (report: any) => {
+    if (!report || !isSuperAdmin) return;
+    setExportingReportId(report.id);
+    setIsActionLoading(true);
+    try {
+      let records: any[] = [];
+      if (selectedReportId === report.id && detailedAssociates.length > 0) {
+        records = detailedAssociates;
+      } else {
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+
+        while (hasMore) {
+          const { data, error } = await supabase
+            .from('associates')
+            .select('*')
+            .eq('report_id', report.id)
+            .order('name', { ascending: true })
+            .range(from, from + pageSize - 1);
+
+          if (error) throw error;
+
+          if (data && data.length > 0) {
+            records = [...records, ...data];
+            from += pageSize;
+            if (data.length < pageSize) hasMore = false;
+          } else {
+            hasMore = false;
+          }
+        }
+      }
+
+      if (records.length === 0) {
+        alert('Nenhum associado encontrado para este relatório.');
+        return;
+      }
+
+      const isPensionista = report.category === 'pensionista';
+      const rows = records.map(a => {
+        if (isPensionista) {
+          const item: any = {
+            'SIAPE 1': a.siape || '',
+            'SIAPE 2': a.siape2 || '',
+            'NOME': a.name || '',
+            'CPF': a.cpf || '',
+            'CONTRATO': a.contract || '',
+            'CATEGORIA': 'Pensionista'
+          };
+          if (isStaff) {
+            item['VALOR (R$)'] = typeof a.value === 'number' ? a.value : Number(a.value || 0);
+          }
+          return item;
+        } else {
+          const item: any = {
+            'SIAPE': a.siape || '',
+            'NOME': a.name || '',
+            'CPF': a.cpf || '',
+            'CONTRATO': a.contract || '',
+            'CATEGORIA': a.pensionista ? 'Pensionista' : 'Ativo / Aposentado'
+          };
+          if (isStaff) {
+            item['VALOR (R$)'] = typeof a.value === 'number' ? a.value : Number(a.value || 0);
+          }
+          return item;
+        }
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      worksheet['!cols'] = isPensionista ? [
+        { wch: 14 },
+        { wch: 14 },
+        { wch: 45 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 14 }
+      ] : [
+        { wch: 14 },
+        { wch: 45 },
+        { wch: 16 },
+        { wch: 16 },
+        { wch: 20 },
+        { wch: 14 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      const sheetName = `Mes_${report.month}_${report.year}`.substring(0, 31);
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+      const baseName = (report.filename || `relatorio_${report.month}_${report.year}`).replace(/\.[^/.]+$/, "");
+      XLSX.writeFile(workbook, `${baseName}.xlsx`);
+
+      await logActivity('Exportação Excel', `Arquivo: ${report.filename}, Mês: ${report.month}/${report.year}, Total: ${records.length}`);
+    } catch (err: any) {
+      console.error('Erro ao exportar Excel:', err);
+      alert('Erro ao gerar planilha Excel: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setExportingReportId(null);
+      setIsActionLoading(false);
+    }
+  };
+
+  const handleExportComparisonExcel = () => {
+    if (!isSuperAdmin) return;
+    const title = diffType === 'included' ? 'Filiacoes' : 'Desfiliacoes';
+    logActivity('Exportação de Comparação (Excel)', `Tipo: ${title}`);
+
+    const filteredResults = diffResults.filter(r => !searchTerm || r.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const rows = filteredResults.map(r => {
+      const item: any = {
+        'SIAPE': `${r.siape}${r.siape2 ? ' / ' + r.siape2 : ''}`,
+        'NOME': r.name,
+        'CPF': r.cpf,
+        'CONTRATO': r.contract || ''
+      };
+      if (isStaff) {
+        item['VALOR (R$)'] = typeof r.value === 'number' ? r.value : Number(r.value || 0);
+      }
+      return item;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, title);
+    XLSX.writeFile(workbook, `comparacao_${diffType}.xlsx`);
+  };
+
+  const handleExportNextPayrollExcel = () => {
+    if (!isSuperAdmin) return;
+    logActivity('Exportação Próxima Folha (Excel)', `Registros: ${nextPayrollRecords.length}`);
+
+    const rows = nextPayrollRecords.map(r => ({
+      'CPF': r.cpf,
+      'NOME': r.name,
+      'OCORRÊNCIA': r.occurrence,
+      'DATA': new Date(r.created_at).toLocaleDateString('pt-BR')
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Proxima_Folha');
+    XLSX.writeFile(workbook, 'para_proxima_folha.xlsx');
+  };
+
+  const formatMaskedCPF = (cpf: string | null | undefined): string => {
+    if (!cpf) return '***.***.***-**';
+    const digits = String(cpf).replace(/\D/g, '');
+    if (digits.length >= 6) {
+      const first6 = digits.slice(0, 6);
+      return `${first6.slice(0, 3)}.${first6.slice(3, 6)}.***-**`;
+    }
+    if (digits.length > 0) {
+      return `${digits.padEnd(6, '*').slice(0, 3)}.${digits.padEnd(6, '*').slice(3, 6)}.***-**`;
+    }
+    return '***.***.***-**';
+  };
+
+  const downloadShareablePDF = async (report: any) => {
+    if (!report) return;
+    setDownloadingShareableId(report.id);
+    setIsActionLoading(true);
+    try {
+      let allData: any[] = [];
+      let from = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('associates')
+          .select('*')
+          .eq('report_id', report.id)
+          .order('name', { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          allData = [...allData, ...data];
+          from += pageSize;
+          if (data.length < pageSize) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (allData.length === 0) {
+        alert('Nenhum associado encontrado nesta lista.');
+        return;
+      }
+
+      const isPensionista = report.category === 'pensionista';
+      const formattedMonth = String(report.month).padStart(2, '0');
+      const monthNamesUpper = [
+        '', 'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+        'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+      ];
+      const monthNum = typeof report.month === 'number' ? report.month : parseInt(report.month, 10) || 1;
+      const monthName = monthNamesUpper[monthNum] || `MÊS ${formattedMonth}`;
+      const typeLabel = isPensionista ? 'PENSIONISTAS' : 'ATIVOS E APOSENTADOS';
+      const shareableTitle = `${monthName} DE ${report.year} (${typeLabel})`;
+
+      const headers = ['SIAPE', 'NOME', 'CPF'];
+      const rows = allData.map(a => {
+        const siapeDisplay = a.siape2 && a.siape && a.siape !== a.siape2 
+          ? `${a.siape} / ${a.siape2}` 
+          : (a.siape || a.siape2 || '-');
+        return [
+          siapeDisplay,
+          a.name || '',
+          formatMaskedCPF(a.cpf)
+        ];
+      });
+
+      const doc = new jsPDF();
+      doc.setFontSize(13);
+      doc.text(`SINTUFPI - ${shareableTitle}`, 14, 15);
+      doc.setFontSize(8);
+      doc.setTextColor(100);
+      doc.text(`Lista oficial para compartilhamento | Dados protegidos conforme LGPD (CPF com 6 primeiros dígitos) | Total: ${allData.length} associados`, 14, 21);
+
+      autoTable(doc, {
+        head: [headers],
+        body: rows,
+        startY: 25,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: isPensionista ? [217, 119, 6] : [37, 99, 235] }
+      });
+
+      const filePrefix = isPensionista ? 'pensionistas' : 'ativos_aposentados';
+      doc.save(`lista_compartilhar_${filePrefix}_${formattedMonth}_${report.year}.pdf`);
+
+      await logActivity('Download Lista Compartilhar', `Título: ${shareableTitle}, Total: ${allData.length}`);
+    } catch (err: any) {
+      console.error('Erro ao gerar PDF de compartilhamento:', err);
+      alert('Erro ao gerar o relatório em PDF: ' + (err.message || 'Erro desconhecido'));
+    } finally {
+      setDownloadingShareableId(null);
+      setIsActionLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
 
@@ -1043,7 +1303,7 @@ export default function Page() {
       const { data: report, error: reportError } = await supabase
         .from('reports')
         .insert({
-          month: uploadMetadata.month.toString(),
+          month: uploadMetadata.month.toString().padStart(2, '0'),
           year: uploadMetadata.year,
           category: uploadMetadata.category,
           filename: pendingFile.name,
@@ -1348,6 +1608,19 @@ export default function Page() {
               </div>
             ) : (
               <>
+                {/* Botão de download de planilha Excel restrito ao Super-Admin */}
+                <button 
+                  onClick={() => exportReportToExcel(report)}
+                  disabled={exportingReportId === report.id}
+                  className="p-1.5 hover:bg-emerald-50 rounded-lg transition-colors text-[#9E9E9E] hover:text-emerald-600 disabled:opacity-50"
+                  title="Baixar planilha Excel (.xlsx)"
+                >
+                  {exportingReportId === report.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                </button>
                 <button 
                   onClick={() => fetchReportDetails(report.id)}
                   className="p-1.5 hover:bg-zinc-100 rounded-lg transition-colors text-[#9E9E9E] hover:text-black"
@@ -1415,7 +1688,7 @@ export default function Page() {
           <div className="flex items-center gap-2 mb-1">
             <h3 className="font-medium text-sm truncate">{report.filename}</h3>
             <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-zinc-100 rounded-full whitespace-nowrap">
-              {report.month}/{report.year}
+              {String(report.month).padStart(2, '0')}/{report.year}
             </span>
           </div>
           <div className="flex items-center gap-4 text-xs text-[#9E9E9E]">
@@ -1598,58 +1871,65 @@ export default function Page() {
           <div className="bg-black text-white p-2 rounded-xl">
             <Users className="w-6 h-6" />
           </div>
-          <h1 className="text-xl font-medium tracking-tight">Gestor de Associados SINTUFPI</h1>
+          <div className="flex flex-col items-center text-center">
+            <h1 className="text-xl font-medium tracking-tight leading-tight">Gestor de Associados SINTUFPI</h1>
+            <span className="text-xs font-semibold tracking-wider text-zinc-500">Versão 2.0</span>
+          </div>
         </div>
 
         {summary && (
-          <div className="flex flex-col items-end lg:items-center text-right lg:text-center">
-            <div className="flex items-center gap-3 lg:gap-6">
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Associados</span>
-                <span className="text-xl font-bold tracking-tight">{summary.totalAssociates.toLocaleString('pt-BR')}</span>
-              </div>
-              
-              {isDirector && (
-                <>
-                  <div className="w-px h-8 bg-zinc-100" />
-                  <div className="flex flex-col">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-600">Valor Acumulado</span>
-                    <span className="text-xl font-bold tracking-tight text-amber-900">
-                      {summary.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </span>
-                  </div>
-                </>
-              )}
-
-              {headerStats && (
-                <>
-                  <div className="w-px h-8 bg-zinc-100" />
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-green-600">FILIAÇÕES</span>
-                      <span className="text-xl font-bold tracking-tight text-green-600">+{headerStats.included}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">DESFILIAÇÕES</span>
-                      <span className="text-xl font-bold tracking-tight text-red-600">-{headerStats.excluded}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {isHeaderLoading && (
-                <>
-                  <div className="w-px h-8 bg-zinc-100" />
-                  <div className="animate-pulse flex gap-4">
-                    <div className="h-10 w-16 bg-zinc-100 rounded-lg"></div>
-                    <div className="h-10 w-16 bg-zinc-100 rounded-lg"></div>
-                  </div>
-                </>
-              )}
+          <div className="flex items-start gap-3 lg:gap-6">
+            <div className="flex flex-col items-center text-center">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Associados</span>
+              <span className="text-xl font-bold tracking-tight">{summary.totalAssociates.toLocaleString('pt-BR')}</span>
             </div>
-            <p className="text-[10px] font-medium text-zinc-500 mt-1 uppercase tracking-widest bg-zinc-50 px-3 py-1 rounded-full border border-zinc-100">
-              Referência: {summary.month} / {summary.year}
-            </p>
+            
+            {isDirector && (
+              <>
+                <div className="w-px h-8 bg-zinc-100 mt-1" />
+                <div className="flex flex-col items-center text-center">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-600">Valor Acumulado</span>
+                  <span className="text-xl font-bold tracking-tight text-amber-900">
+                    {summary.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </span>
+                  <p className="text-[10px] font-medium text-zinc-500 mt-1 uppercase tracking-widest bg-zinc-50 px-3 py-1 rounded-full border border-zinc-100 whitespace-nowrap">
+                    Referência: {summary.month} / {summary.year}
+                  </p>
+                </div>
+              </>
+            )}
+
+            {headerStats && (
+              <>
+                <div className="w-px h-8 bg-zinc-100 mt-1" />
+                <div className="flex items-center gap-4">
+                  <div className="flex flex-col items-center text-center">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-green-600">FILIAÇÕES</span>
+                    <span className="text-xl font-bold tracking-tight text-green-600">+{headerStats.included}</span>
+                  </div>
+                  <div className="flex flex-col items-center text-center">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-red-600">DESFILIAÇÕES</span>
+                    <span className="text-xl font-bold tracking-tight text-red-600">-{headerStats.excluded}</span>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isHeaderLoading && (
+              <>
+                <div className="w-px h-8 bg-zinc-100 mt-1" />
+                <div className="animate-pulse flex gap-4">
+                  <div className="h-10 w-16 bg-zinc-100 rounded-lg"></div>
+                  <div className="h-10 w-16 bg-zinc-100 rounded-lg"></div>
+                </div>
+              </>
+            )}
+
+            {!isDirector && (
+              <p className="text-[10px] font-medium text-zinc-500 mt-1 uppercase tracking-widest bg-zinc-50 px-3 py-1 rounded-full border border-zinc-100 whitespace-nowrap">
+                Referência: {summary.month} / {summary.year}
+              </p>
+            )}
           </div>
         )}
 
@@ -1837,7 +2117,7 @@ export default function Page() {
                   >
                     <option value="">Selecione...</option>
                     {reports.map(r => (
-                      <option key={r.id} value={r.id}>{r.month}/{r.year} - {r.category} - {r.filename}</option>
+                      <option key={r.id} value={r.id}>{String(r.month).padStart(2, '0')}/{r.year} - {r.category} - {r.filename}</option>
                     ))}
                   </select>
                 </div>
@@ -1850,7 +2130,7 @@ export default function Page() {
                   >
                     <option value="">Selecione...</option>
                     {reports.map(r => (
-                      <option key={r.id} value={r.id}>{r.month}/{r.year} - {r.category} - {r.filename}</option>
+                      <option key={r.id} value={r.id}>{String(r.month).padStart(2, '0')}/{r.year} - {r.category} - {r.filename}</option>
                     ))}
                   </select>
                 </div>
@@ -1896,6 +2176,15 @@ export default function Page() {
                         title="Limpar todos os registros"
                       >
                         <Trash2 className="w-3.5 h-3.5" /> Limpar Tudo
+                      </button>
+                    )}
+                    {isSuperAdmin && (
+                      <button 
+                        onClick={handleExportNextPayrollExcel}
+                        className="p-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-200"
+                        title="Exportar Planilha Excel (.xlsx)"
+                      >
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                       </button>
                     )}
                     <button 
@@ -1970,7 +2259,7 @@ export default function Page() {
                   <p className="text-center py-8 text-xs text-[#9E9E9E]">Nenhum registro pendente.</p>
                 ) : (
                   <>
-                    {nextPayrollRecords.slice((nextPayrollPage - 1) * 5, nextPayrollPage * 5).map((record) => (
+                    {nextPayrollRecords.slice((nextPayrollPage - 1) * 4, nextPayrollPage * 4).map((record) => (
                       <div key={record.id} className="p-3 bg-white border border-zinc-100 rounded-xl hover:border-zinc-200 transition-all group relative">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${record.occurrence === 'INCLUSÃO' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
@@ -1993,24 +2282,26 @@ export default function Page() {
                       </div>
                     ))}
 
-                    {nextPayrollRecords.length > 5 && (
+                    {nextPayrollRecords.length > 4 && (
                       <div className="flex items-center justify-between pt-4 pb-2 border-t border-zinc-100 mt-4">
                         <button
                           disabled={nextPayrollPage === 1}
-                          onClick={() => setNextPayrollPage(prev => prev - 1)}
-                          className="bg-zinc-100 text-[#9E9E9E] p-2 rounded-lg disabled:opacity-30 transition-all hover:bg-zinc-200"
+                          onClick={() => setNextPayrollPage(prev => Math.max(1, prev - 1))}
+                          className="bg-zinc-100 text-[#9E9E9E] p-2 rounded-lg disabled:opacity-30 transition-all hover:bg-zinc-200 hover:text-black cursor-pointer disabled:cursor-not-allowed"
+                          title="Página anterior"
                         >
-                          <Plus className="w-4 h-4 rotate-45" />
+                          <ArrowLeft className="w-4 h-4" />
                         </button>
                         <span className="text-[10px] font-bold text-[#9E9E9E] uppercase tracking-widest">
-                          Página {nextPayrollPage} de {Math.ceil(nextPayrollRecords.length / 5)}
+                          Página {nextPayrollPage} de {Math.ceil(nextPayrollRecords.length / 4)}
                         </span>
                         <button
-                          disabled={nextPayrollPage === Math.ceil(nextPayrollRecords.length / 5)}
-                          onClick={() => setNextPayrollPage(prev => prev + 1)}
-                          className="bg-black text-white p-2 rounded-lg disabled:opacity-30 transition-all hover:bg-zinc-800"
+                          disabled={nextPayrollPage >= Math.ceil(nextPayrollRecords.length / 4)}
+                          onClick={() => setNextPayrollPage(prev => Math.min(Math.ceil(nextPayrollRecords.length / 4), prev + 1))}
+                          className="bg-black text-white p-2 rounded-lg disabled:opacity-30 transition-all hover:bg-zinc-800 cursor-pointer disabled:cursor-not-allowed"
+                          title="Próxima página"
                         >
-                          <Plus className="w-4 h-4" />
+                          <ArrowRight className="w-4 h-4" />
                         </button>
                       </div>
                     )}
@@ -2115,6 +2406,152 @@ export default function Page() {
                     </div>
                   </div>
                 )}
+
+                {/* Listas para Compartilhar */}
+                {(() => {
+                  const latestNormalReport = reports.find(r => r.category !== 'pensionista');
+                  const latestPensionistaReport = reports.find(r => r.category === 'pensionista');
+
+                  const monthNamesUpper = [
+                    '', 'JANEIRO', 'FEVEREIRO', 'MARÇO', 'ABRIL', 'MAIO', 'JUNHO',
+                    'JULHO', 'AGOSTO', 'SETEMBRO', 'OUTUBRO', 'NOVEMBRO', 'DEZEMBRO'
+                  ];
+
+                  const getShareableTitle = (r: any, defaultType: string) => {
+                    if (!r) return '';
+                    const m = typeof r.month === 'number' ? r.month : parseInt(r.month, 10) || 1;
+                    const mName = monthNamesUpper[m] || `MÊS ${r.month}`;
+                    const type = r.category === 'pensionista' ? 'PENSIONISTAS' : 'ATIVOS E APOSENTADOS';
+                    return `${mName} DE ${r.year} (${type})`;
+                  };
+
+                  return (
+                    <div className="bg-white p-6 rounded-[24px] shadow-sm border border-zinc-100 mb-8">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 pb-4 border-b border-zinc-100">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                            <Share2 className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h2 className="text-sm font-semibold uppercase tracking-widest text-black">Listas para Compartilhar</h2>
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full">
+                                PDF com CPF Protegido
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#9E9E9E]">
+                              Lista atualizada dos associados. Clique no relatório para baixar em PDF.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Lista Normal Mais Recente */}
+                        {latestNormalReport ? (
+                          <div
+                            onClick={() => downloadShareablePDF(latestNormalReport)}
+                            className="text-left bg-gradient-to-br from-blue-50/40 via-white to-white p-5 rounded-[20px] border border-blue-100 hover:border-blue-400 hover:shadow-md transition-all group relative cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-base text-zinc-900 group-hover:text-blue-600 transition-colors leading-snug">
+                                  {getShareableTitle(latestNormalReport, 'ATIVOS E APOSENTADOS')}
+                                </h3>
+                                <p className="text-[11px] text-[#9E9E9E] truncate mt-1">
+                                  Arquivo: {latestNormalReport.filename}
+                                </p>
+                              </div>
+                              <div className="p-2.5 bg-blue-600 text-white rounded-xl group-hover:bg-blue-700 transition-colors shadow-sm shrink-0">
+                                {downloadingShareableId === latestNormalReport.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Download className="w-4 h-4" />
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-[#9E9E9E] mt-4 pt-3 border-t border-blue-100/60">
+                              <span className="font-medium text-zinc-600">
+                                {latestNormalReport.total_associates?.toLocaleString('pt-BR')} associados
+                              </span>
+                              <span className="text-xs font-bold text-blue-600 group-hover:underline flex items-center gap-1.5">
+                                {downloadingShareableId === latestNormalReport.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    Gerando PDF...
+                                  </>
+                                ) : (
+                                  <>
+                                    <FileText className="w-3.5 h-3.5" />
+                                    Baixar PDF
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-zinc-50 p-6 rounded-[20px] border border-dashed border-zinc-200 text-center flex flex-col items-center justify-center min-h-[140px]">
+                            <p className="text-xs text-[#9E9E9E]">Nenhuma lista de ativos/aposentados encontrada.</p>
+                          </div>
+                        )}
+
+                        {/* Lista Pensionista Mais Recente */}
+                        {latestPensionistaReport ? (
+                          <div
+                            onClick={() => downloadShareablePDF(latestPensionistaReport)}
+                            className="text-left bg-gradient-to-br from-amber-50/40 via-white to-white p-5 rounded-[20px] border border-amber-100 hover:border-amber-400 hover:shadow-md transition-all group relative cursor-pointer"
+                            role="button"
+                            tabIndex={0}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-base text-zinc-900 group-hover:text-amber-700 transition-colors leading-snug">
+                                  {getShareableTitle(latestPensionistaReport, 'PENSIONISTAS')}
+                                </h3>
+                                <p className="text-[11px] text-[#9E9E9E] truncate mt-1">
+                                  Arquivo: {latestPensionistaReport.filename}
+                                </p>
+                              </div>
+                              <div className="p-2.5 bg-amber-600 text-white rounded-xl group-hover:bg-amber-700 transition-colors shadow-sm shrink-0">
+                                {downloadingShareableId === latestPensionistaReport.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Download className="w-4 h-4" />
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between text-xs text-[#9E9E9E] mt-4 pt-3 border-t border-amber-100/60">
+                              <span className="font-medium text-zinc-600">
+                                {latestPensionistaReport.total_associates?.toLocaleString('pt-BR')} associados
+                              </span>
+                              <span className="text-xs font-bold text-amber-700 group-hover:underline flex items-center gap-1.5">
+                                {downloadingShareableId === latestPensionistaReport.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    Gerando PDF...
+                                  </>
+                                ) : (
+                                  <>
+                                    <FileText className="w-3.5 h-3.5" />
+                                    Baixar PDF
+                                  </>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-zinc-50 p-6 rounded-[20px] border border-dashed border-zinc-200 text-center flex flex-col items-center justify-center min-h-[140px]">
+                            <p className="text-xs text-[#9E9E9E]">Nenhuma lista de pensionistas encontrada.</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex items-center justify-between">
                   <h2 className="text-2xl font-medium tracking-tight">Histórico de Listas</h2>
@@ -2711,6 +3148,21 @@ export default function Page() {
                           </div>
 
                           <div className="flex items-center gap-2 ml-4 no-print">
+                            {isSuperAdmin && (
+                              <button 
+                                onClick={() => exportReportToExcel(currentReport)}
+                                disabled={exportingReportId === currentReport?.id}
+                                className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-xs font-bold uppercase tracking-widest text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-200 disabled:opacity-50"
+                                title="Baixar planilha Excel (.xlsx)"
+                              >
+                                {exportingReportId === currentReport?.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+                                ) : (
+                                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                                )}
+                                Excel (.xlsx)
+                              </button>
+                            )}
                             <button 
                               onClick={handleExportReportDetails}
                               className="flex items-center gap-2 px-3 py-2 bg-zinc-50 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] hover:text-black hover:bg-zinc-100 rounded-xl transition-all border border-zinc-100"
@@ -2854,6 +3306,15 @@ export default function Page() {
                     </div>
 
                     <div className="flex items-center gap-2 ml-4 no-print">
+                      {isSuperAdmin && (
+                        <button 
+                          onClick={handleExportComparisonExcel}
+                          className="flex items-center gap-2 px-3 py-2 bg-emerald-50 text-xs font-bold uppercase tracking-widest text-emerald-700 hover:text-emerald-800 hover:bg-emerald-100 rounded-xl transition-all border border-emerald-200"
+                          title="Exportar Excel (.xlsx)"
+                        >
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Excel (.xlsx)
+                        </button>
+                      )}
                       <button 
                         onClick={handleExportComparison}
                         className="flex items-center gap-2 px-3 py-2 bg-zinc-50 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] hover:text-black hover:bg-zinc-100 rounded-xl transition-all border border-zinc-100"

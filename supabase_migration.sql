@@ -280,3 +280,46 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 11. Explicit Grants for Supabase Data API (Post-May 2026 security changes)
+-- This ensures the Data API can access tables in the public schema
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+
+-- Grant access to all existing tables in public schema
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO service_role;
+
+-- Explicit grants for the Data API to work with RLS
+-- Profiles
+GRANT SELECT ON public.profiles TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO authenticated;
+
+-- Reports
+GRANT SELECT ON public.reports TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.reports TO authenticated;
+
+-- Associates
+GRANT SELECT ON public.associates TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.associates TO authenticated;
+
+-- Next Payroll Records
+GRANT SELECT ON public.next_payroll_records TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.next_payroll_records TO authenticated;
+
+-- System Logs
+GRANT SELECT ON public.system_logs TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.system_logs TO authenticated;
+
+-- Set default privileges for future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO anon;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+
+-- Set default privileges for future sequences
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO authenticated;
+
+-- Set default privileges for future functions
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO service_role;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO authenticated;
