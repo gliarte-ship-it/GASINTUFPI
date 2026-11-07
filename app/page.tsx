@@ -7,7 +7,7 @@ import {
   TrendingUp, TrendingDown, LogOut, FileSpreadsheet, LogIn,
   Trash2, Edit3, Eye, MoreVertical, Check, X, ArrowLeft, ArrowRight, Search, Info,
   User as UserIcon, Shield, ShieldAlert, ShieldCheck, Upload, Image as ImageIcon,
-  Printer, FileText, Key, Loader2, Share2
+  Printer, FileText, Key, Loader2, Share2, FlaskConical
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
@@ -16,6 +16,7 @@ import { parseFile, AssociateRecord } from '@/lib/parser';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import TxtLab from '@/components/TxtLab';
 
 
 export default function Page() {
@@ -41,7 +42,7 @@ export default function Page() {
   const [isHeaderLoading, setIsHeaderLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
-  const [view, setView] = useState<'dashboard' | 'comparison' | 'total' | 'report-details' | 'users' | 'profile' | 'logs'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'comparison' | 'total' | 'report-details' | 'users' | 'profile' | 'logs' | 'txt-lab'>('dashboard');
   
   // Login states
   const [loginEmail, setLoginEmail] = useState('');
@@ -830,7 +831,7 @@ export default function Page() {
     
     let headers = [];
     if (isPensionista) {
-      headers = ['SIAPE 1', 'SIAPE 2', 'NOME', 'CPF', 'CONTRATO'];
+      headers = ['SIAPE PENS.', 'SIAPE INST.', 'NOME', 'CPF', 'CONTRATO'];
     } else {
       headers = ['SIAPE', 'NOME', 'CPF', 'CONTRATO'];
     }
@@ -955,8 +956,8 @@ export default function Page() {
       const rows = records.map(a => {
         if (isPensionista) {
           const item: any = {
-            'SIAPE 1': a.siape || '',
-            'SIAPE 2': a.siape2 || '',
+            'SIAPE Pensionista': a.siape || '',
+            'SIAPE Instituidor': a.siape2 || '',
             'NOME': a.name || '',
             'CPF': a.cpf || '',
             'CONTRATO': a.contract || '',
@@ -1269,6 +1270,7 @@ export default function Page() {
   }, [reports]);
 
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [uploadType, setUploadType] = useState<'excel' | 'txt'>('excel');
   const [uploadMetadata, setUploadMetadata] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear(), category: 'normal' });
   const [uploadKey, setUploadKey] = useState(0);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -1276,6 +1278,12 @@ export default function Page() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === 'txt') {
+        setUploadType('txt');
+      } else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+        setUploadType('excel');
+      }
       setShowSuccess(false);
       setPendingFile(file);
     }
@@ -1936,13 +1944,23 @@ export default function Page() {
         <div className="flex items-center gap-3">
           {/* User management and profile icons */}
           {isSuperAdmin && (
-            <button 
-              onClick={() => setView('logs')}
-              className={`p-3 rounded-2xl transition-all ${view === 'logs' ? 'bg-black text-white shadow-lg shadow-black/10' : 'bg-white text-[#9E9E9E] hover:bg-zinc-100 hover:text-black border border-zinc-100'}`}
-              title="Logs do Sistema"
-            >
-              <FileText className="w-5 h-5" />
-            </button>
+            <>
+              <button 
+                onClick={() => setView('txt-lab')}
+                className={`px-3 py-2.5 rounded-2xl transition-all flex items-center gap-2 ${view === 'txt-lab' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'}`}
+                title="Laboratório TXT (Exclusivo Super-Admin)"
+              >
+                <FlaskConical className="w-4 h-4" />
+                <span className="text-xs font-bold">Lab TXT</span>
+              </button>
+              <button 
+                onClick={() => setView('logs')}
+                className={`p-3 rounded-2xl transition-all ${view === 'logs' ? 'bg-black text-white shadow-lg shadow-black/10' : 'bg-white text-[#9E9E9E] hover:bg-zinc-100 hover:text-black border border-zinc-100'}`}
+                title="Logs do Sistema"
+              >
+                <FileText className="w-5 h-5" />
+              </button>
+            </>
           )}
 
           {isStaff && (
@@ -1996,15 +2014,40 @@ export default function Page() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-8 pt-8 pb-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
+      <main className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 pt-8 pb-4 grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Sidebar / Upload Section */}
-        {view !== 'users' && view !== 'profile' && view !== 'logs' && (
+        {view !== 'users' && view !== 'profile' && view !== 'logs' && view !== 'txt-lab' && view !== 'report-details' && (
           <section className="lg:col-span-4 space-y-6 no-print">
             {/* Nova Lista - Only for SUPER_ADMIN */}
             {isSuperAdmin && (
               <div className="bg-white p-6 rounded-[24px] shadow-sm border border-zinc-100">
-                <h2 className="text-sm font-semibold uppercase tracking-widest text-[#9E9E9E] mb-4">Novo Upload (Super-Adm)</h2>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-sm font-semibold uppercase tracking-widest text-[#9E9E9E]">Novo Upload (Super-Adm)</h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600">Oficial</span>
+                </div>
+
+                {/* Switcher de Formato: Excel vs TXT */}
+                {!pendingFile && !showSuccess && (
+                  <div className="flex bg-zinc-100 p-1 rounded-xl mb-4 text-xs font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => setUploadType('excel')}
+                      className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${uploadType === 'excel' ? 'bg-white text-black shadow-sm font-bold' : 'text-zinc-500 hover:text-black'}`}
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Excel / CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadType('txt')}
+                      className={`flex-1 py-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${uploadType === 'txt' ? 'bg-white text-indigo-700 shadow-sm font-bold' : 'text-zinc-500 hover:text-black'}`}
+                    >
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Arquivo TXT</span>
+                    </button>
+                  </div>
+                )}
                 
                 {showSuccess ? (
                 <motion.div 
@@ -2016,7 +2059,7 @@ export default function Page() {
                     <Check className="w-6 h-6" />
                   </div>
                   <h3 className="text-green-800 font-medium mb-1">Upload Concluído</h3>
-                  <p className="text-green-600 text-xs mb-4">O arquivo foi processado e salvo com sucesso.</p>
+                  <p className="text-green-600 text-xs mb-4">O arquivo foi processado e salvo como relatório oficial no sistema.</p>
                   <button 
                     onClick={resetUpload}
                     className="w-full bg-green-600 text-white py-3 rounded-xl text-sm font-medium hover:bg-green-700 transition-all"
@@ -2030,9 +2073,22 @@ export default function Page() {
                   animate={{ opacity: 1, scale: 1 }}
                   className="space-y-4"
                 >
-                  <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100">
-                    <p className="text-xs font-bold text-black uppercase mb-1">Arquivo Selecionado</p>
-                    <p className="text-sm truncate text-[#9E9E9E]">{pendingFile.name}</p>
+                  <div className="bg-zinc-50 p-4 rounded-xl border border-zinc-100 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] font-bold text-[#9E9E9E] uppercase tracking-wider">Arquivo Selecionado</p>
+                      {uploadType === 'txt' || pendingFile.name.endsWith('.txt') ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                          <FileText className="w-3 h-3 text-indigo-600" />
+                          Folha TXT SIAPE
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                          Planilha Excel/CSV
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-semibold truncate text-zinc-900">{pendingFile.name}</p>
                   </div>
   
                   <div className="grid grid-cols-2 gap-3">
@@ -2080,7 +2136,7 @@ export default function Page() {
                       disabled={isUploading}
                       className="flex-1 bg-black text-white py-3 rounded-xl text-sm font-medium hover:bg-zinc-800 transition-all disabled:opacity-50"
                     >
-                      {isUploading ? 'Processando...' : 'Confirmar Upload'}
+                      {isUploading ? 'Processando...' : 'Confirmar Upload Oficial'}
                     </button>
                     <button 
                       onClick={resetUpload}
@@ -2090,16 +2146,27 @@ export default function Page() {
                     </button>
                   </div>
                 </motion.div>
-              ) : (
-                <label className="relative group flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-zinc-200 rounded-[20px] cursor-pointer hover:border-black hover:bg-zinc-50 transition-all">
+              ) : uploadType === 'txt' ? (
+                <label className="relative group flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-indigo-200 rounded-[20px] cursor-pointer hover:border-indigo-600 hover:bg-indigo-50/20 transition-all bg-indigo-50/5">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <div className="p-3 bg-zinc-100 rounded-full group-hover:bg-black group-hover:text-white transition-colors mb-3">
-                      <Plus className="w-6 h-6" />
+                    <div className="p-3 bg-indigo-50 text-indigo-700 rounded-full group-hover:bg-indigo-600 group-hover:text-white transition-colors mb-2">
+                      <FileText className="w-6 h-6" />
                     </div>
-                    <p className="text-sm font-medium">Carregar Excel ou CSV</p>
-                    <p className="text-xs text-[#9E9E9E]">Solte o arquivo ou clique aqui</p>
+                    <p className="text-sm font-bold text-zinc-900">Carregar Arquivo TXT</p>
+                    <p className="text-xs text-indigo-600 font-medium">Layout Oficial SIAPE / SERPRO (.txt)</p>
                   </div>
-                  <input key={uploadKey} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} />
+                  <input key={`txt-${uploadKey}`} type="file" className="hidden" accept=".txt" onChange={handleFileSelect} />
+                </label>
+              ) : (
+                <label className="relative group flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-zinc-200 rounded-[20px] cursor-pointer hover:border-black hover:bg-zinc-50 transition-all">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <div className="p-3 bg-zinc-100 rounded-full group-hover:bg-black group-hover:text-white transition-colors mb-2">
+                      <FileSpreadsheet className="w-6 h-6" />
+                    </div>
+                    <p className="text-sm font-bold text-zinc-900">Carregar Excel ou CSV</p>
+                    <p className="text-xs text-[#9E9E9E]">Solte o arquivo ou clique aqui (.xlsx, .xls, .csv)</p>
+                  </div>
+                  <input key={`excel-${uploadKey}`} type="file" className="hidden" accept=".xlsx,.xls,.csv" onChange={handleFileSelect} />
                 </label>
               )}
             </div>
@@ -2313,7 +2380,7 @@ export default function Page() {
         )}
   
         {/* Content Section */}
-        <section className={view === 'users' || view === 'profile' || view === 'logs' ? 'lg:col-span-12' : 'lg:col-span-8'}>
+        <section className={view === 'users' || view === 'profile' || view === 'logs' || view === 'txt-lab' || view === 'report-details' ? 'lg:col-span-12' : 'lg:col-span-8'}>
           <AnimatePresence mode="wait">
             {view === 'dashboard' ? (
               <motion.div 
@@ -2561,83 +2628,87 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  {/* Coluna Normal */}
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-2 px-2 pb-2 border-b border-zinc-200">
-                      <div className="w-2 h-2 rounded-full bg-blue-600" />
-                      <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Ativos e Aposentados</h3>
-                      <span className="ml-auto text-[10px] font-medium bg-zinc-100 px-2 py-0.5 rounded-full text-[#9E9E9E]">
-                        {reports.filter(r => r.category !== 'pensionista').length}
-                      </span>
-                    </div>
-                    <div className="space-y-4">
-                      {reports.filter(r => r.category !== 'pensionista').slice((historyPage - 1) * 3, historyPage * 3).map(renderReportCard)}
-                      {reports.filter(r => r.category !== 'pensionista').length === 0 && (
-                        <div className="text-center py-12 bg-white/50 rounded-[24px] border border-dashed border-zinc-200">
-                          <p className="text-xs text-[#9E9E9E]">Nenhuma lista de ativos/aposentados encontrada.</p>
+                {(() => {
+                  const PAGE_SIZE_PER_CATEGORY = 4;
+                  const normalReports = reports.filter(r => r.category !== 'pensionista');
+                  const pensReports = reports.filter(r => r.category === 'pensionista');
+                  const totalHistoryPages = Math.max(1, Math.max(
+                    Math.ceil(normalReports.length / PAGE_SIZE_PER_CATEGORY),
+                    Math.ceil(pensReports.length / PAGE_SIZE_PER_CATEGORY)
+                  ));
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        {/* Coluna Normal */}
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-2 px-2 pb-2 border-b border-zinc-200">
+                            <div className="w-2 h-2 rounded-full bg-blue-600" />
+                            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Ativos e Aposentados</h3>
+                            <span className="ml-auto text-[10px] font-medium bg-zinc-100 px-2 py-0.5 rounded-full text-[#9E9E9E]">
+                              {normalReports.length}
+                            </span>
+                          </div>
+                          <div className="space-y-4">
+                            {normalReports.slice((historyPage - 1) * PAGE_SIZE_PER_CATEGORY, historyPage * PAGE_SIZE_PER_CATEGORY).map(renderReportCard)}
+                            {normalReports.length === 0 && (
+                              <div className="text-center py-12 bg-white/50 rounded-[24px] border border-dashed border-zinc-200">
+                                <p className="text-xs text-[#9E9E9E]">Nenhuma lista de ativos/aposentados encontrada.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Coluna Pensionista */}
+                        <div className="space-y-6">
+                          <div className="flex items-center gap-2 px-2 pb-2 border-b border-zinc-200">
+                            <div className="w-2 h-2 rounded-full bg-amber-600" />
+                            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Pensionistas</h3>
+                            <span className="ml-auto text-[10px] font-medium bg-amber-50 px-2 py-0.5 rounded-full text-amber-600">
+                              {pensReports.length}
+                            </span>
+                          </div>
+                          <div className="space-y-4">
+                            {pensReports.slice((historyPage - 1) * PAGE_SIZE_PER_CATEGORY, historyPage * PAGE_SIZE_PER_CATEGORY).map(renderReportCard)}
+                            {pensReports.length === 0 && (
+                              <div className="text-center py-12 bg-white/50 rounded-[24px] border border-dashed border-zinc-200">
+                                <p className="text-xs text-[#9E9E9E]">Nenhuma lista de pensionistas encontrada.</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {totalHistoryPages > 1 && (
+                        <div className="flex items-center justify-center gap-4 pt-4 mt-6 border-t border-zinc-100">
+                          <button 
+                            onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
+                            disabled={historyPage === 1}
+                            className="p-2 rounded-xl hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            title="Página anterior"
+                          >
+                            <ArrowLeft className="w-5 h-5" />
+                          </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-black px-3 py-1 bg-zinc-100 rounded-lg">Página {historyPage}</span>
+                            <span className="text-[10px] uppercase font-bold text-[#9E9E9E] tracking-widest">
+                              de {totalHistoryPages}
+                            </span>
+                          </div>
+                          <button 
+                            onClick={() => setHistoryPage(p => Math.min(totalHistoryPages, p + 1))}
+                            disabled={historyPage >= totalHistoryPages}
+                            className="p-2 rounded-xl hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                            title="Próxima página"
+                          >
+                            <ArrowRight className="w-5 h-5" />
+                          </button>
                         </div>
                       )}
-                    </div>
-                  </div>
-
-                  {/* Coluna Pensionista */}
-                  <div className="space-y-6">
-                    <div className="flex items-center gap-2 px-2 pb-2 border-b border-zinc-200">
-                      <div className="w-2 h-2 rounded-full bg-amber-600" />
-                      <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-[#9E9E9E]">Pensionistas</h3>
-                      <span className="ml-auto text-[10px] font-medium bg-amber-50 px-2 py-0.5 rounded-full text-amber-600">
-                        {reports.filter(r => r.category === 'pensionista').length}
-                      </span>
-                    </div>
-                    <div className="space-y-4">
-                      {reports.filter(r => r.category === 'pensionista').slice((historyPage - 1) * 3, historyPage * 3).map(renderReportCard)}
-                      {reports.filter(r => r.category === 'pensionista').length === 0 && (
-                        <div className="text-center py-12 bg-white/50 rounded-[24px] border border-dashed border-zinc-200">
-                          <p className="text-xs text-[#9E9E9E]">Nenhuma lista de pensionistas encontrada.</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Pagination Controls */}
-                {Math.max(
-                  Math.ceil(reports.filter(r => r.category !== 'pensionista').length / 3),
-                  Math.ceil(reports.filter(r => r.category === 'pensionista').length / 3)
-                ) > 1 && (
-                  <div className="flex items-center justify-center gap-4 pt-4 mt-6 border-t border-zinc-100">
-                    <button 
-                      onClick={() => setHistoryPage(p => Math.max(1, p - 1))}
-                      disabled={historyPage === 1}
-                      className="p-2 rounded-xl hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    >
-                      <ArrowLeft className="w-5 h-5" />
-                    </button>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-black px-3 py-1 bg-zinc-100 rounded-lg">Página {historyPage}</span>
-                      <span className="text-[10px] uppercase font-bold text-[#9E9E9E] tracking-widest">de {
-                        Math.max(
-                          Math.ceil(reports.filter(r => r.category !== 'pensionista').length / 3),
-                          Math.ceil(reports.filter(r => r.category === 'pensionista').length / 3)
-                        )
-                      }</span>
-                    </div>
-                    <button 
-                      onClick={() => setHistoryPage(p => Math.min(Math.max(
-                        Math.ceil(reports.filter(r => r.category !== 'pensionista').length / 3),
-                        Math.ceil(reports.filter(r => r.category === 'pensionista').length / 3)
-                      ), p + 1))}
-                      disabled={historyPage >= Math.max(
-                        Math.ceil(reports.filter(r => r.category !== 'pensionista').length / 3),
-                        Math.ceil(reports.filter(r => r.category === 'pensionista').length / 3)
-                      )}
-                      className="p-2 rounded-xl hover:bg-zinc-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                    >
-                      <ArrowBigRight className="w-5 h-5" />
-                    </button>
-                  </div>
-                )}
+                    </>
+                  );
+                })()}
               </motion.div>
             ) : view === 'users' ? (
               <motion.div 
@@ -2946,6 +3017,15 @@ export default function Page() {
                   )}
                 </AnimatePresence>
               </motion.div>
+            ) : view === 'txt-lab' && isSuperAdmin ? (
+              <motion.div 
+                key="txt-lab"
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -20 }}
+              >
+                <TxtLab onBack={() => setView('dashboard')} userEmail={user?.email} />
+              </motion.div>
             ) : view === 'logs' && isSuperAdmin ? (
               <motion.div 
                 key="logs"
@@ -3192,49 +3272,49 @@ export default function Page() {
                         </div>
                       </div>
 
-                      <div className="bg-white rounded-[24px] overflow-hidden border border-zinc-100 shadow-sm">
+                      <div className="bg-white rounded-[24px] overflow-hidden border border-zinc-100 shadow-sm max-w-[1240px]">
                         <div className="overflow-x-auto">
-                          <table className="w-full text-left border-collapse min-w-[800px]">
+                          <table className="w-full text-left border-collapse">
                             <thead>
                               <tr className="bg-zinc-50 border-bottom border-zinc-100">
                                 {isPensionista ? (
                                   <>
-                                    <th onClick={() => handleSort('siape')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                    <th onClick={() => handleSort('siape')} className="py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap w-[15%]">
                                       <div className="flex items-center gap-1">
-                                        SIAPE 1 {sortConfig.key === 'siape' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
+                                        Siape Pensionista {sortConfig.key === 'siape' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                       </div>
                                     </th>
-                                    <th onClick={() => handleSort('siape2')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                    <th onClick={() => handleSort('siape2')} className="py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap w-[15%]">
                                       <div className="flex items-center gap-1">
-                                        SIAPE 2 {sortConfig.key === 'siape2' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
+                                        Siape Instituidor {sortConfig.key === 'siape2' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                       </div>
                                     </th>
                                   </>
                                 ) : (
-                                  <th onClick={() => handleSort('siape')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                  <th onClick={() => handleSort('siape')} className="py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap w-[16%]">
                                     <div className="flex items-center gap-1">
                                       SIAPE {sortConfig.key === 'siape' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                     </div>
                                   </th>
                                 )}
-                                <th onClick={() => handleSort('name')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                <th onClick={() => handleSort('name')} className={`py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group ${isPensionista ? 'w-[30%]' : 'w-[36%]'}`}>
                                   <div className="flex items-center gap-1">
                                     Nome {sortConfig.key === 'name' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                   </div>
                                 </th>
-                                <th onClick={() => handleSort('cpf')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                <th onClick={() => handleSort('cpf')} className={`py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap ${isPensionista ? 'w-[14%]' : 'w-[16%]'}`}>
                                   <div className="flex items-center gap-1">
                                     CPF {sortConfig.key === 'cpf' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                   </div>
                                 </th>
                                 {isStaff && (
-                                  <th onClick={() => handleSort('value')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
-                                    <div className="flex items-center gap-1">
+                                  <th onClick={() => handleSort('value')} className={`py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap text-right ${isPensionista ? 'w-[12%]' : 'w-[14%]'}`}>
+                                    <div className="flex items-center justify-end gap-1">
                                       Valor (R$) {sortConfig.key === 'value' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                     </div>
                                   </th>
                                 )}
-                                <th onClick={() => handleSort('contract')} className="p-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group">
+                                <th onClick={() => handleSort('contract')} className={`py-3.5 px-4 text-[10px] font-bold uppercase tracking-widest text-[#9E9E9E] cursor-pointer hover:bg-zinc-100 transition-colors group whitespace-nowrap ${isPensionista ? 'w-[14%]' : 'w-[18%]'}`}>
                                   <div className="flex items-center gap-1">
                                     Contrato {sortConfig.key === 'contract' && (sortConfig.direction === 'asc' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />)}
                                   </div>
@@ -3252,20 +3332,20 @@ export default function Page() {
                                 <tr key={associate.id} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
                                   {isPensionista ? (
                                     <>
-                                      <td className="p-4 text-xs font-mono">{associate.siape || '---'}</td>
-                                      <td className="p-4 text-xs font-mono">{associate.siape2 || '---'}</td>
+                                      <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap">{associate.siape || '---'}</td>
+                                      <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap">{associate.siape2 || '---'}</td>
                                     </>
                                   ) : (
-                                    <td className="p-4 text-xs font-mono">{associate.siape || '---'}</td>
+                                    <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap">{associate.siape || '---'}</td>
                                   )}
-                                  <td className="p-4 text-sm font-medium">{associate.name}</td>
-                                  <td className="p-4 text-xs font-mono">{associate.cpf}</td>
+                                  <td className="py-3.5 px-4 text-sm font-medium text-zinc-900">{associate.name}</td>
+                                  <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap text-zinc-700">{associate.cpf}</td>
                                   {isStaff && (
-                                    <td className="p-4 text-sm font-mono">
+                                    <td className="py-3.5 px-4 text-sm font-mono whitespace-nowrap text-right font-medium text-zinc-900">
                                       {associate.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                     </td>
                                   )}
-                                  <td className="p-4 text-xs font-mono">{associate.contract || '---'}</td>
+                                  <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap font-medium text-zinc-800">{associate.contract || '---'}</td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3356,14 +3436,14 @@ export default function Page() {
 
                 <div className="bg-white rounded-[24px] overflow-hidden border border-zinc-100 shadow-sm">
                   <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse min-w-[800px]">
+                    <table className="w-full text-left border-collapse min-w-[900px]">
                       <thead>
                         <tr className="bg-zinc-50 border-bottom border-zinc-100">
-                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E]">SIAPE</th>
+                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] whitespace-nowrap">SIAPE</th>
                           <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E]">Nome do Associado</th>
-                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E]">CPF</th>
-                          {isStaff && <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] text-right">Valor</th>}
-                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E]">Contrato</th>
+                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] whitespace-nowrap">CPF</th>
+                          {isStaff && <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] text-right whitespace-nowrap">Valor</th>}
+                          <th className="p-4 text-xs font-bold uppercase tracking-widest text-[#9E9E9E] whitespace-nowrap">Contrato</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -3378,15 +3458,15 @@ export default function Page() {
                           <>
                             {diffResults.filter(r => !searchTerm || r.name.toLowerCase().includes(searchTerm.toLowerCase())).map((record, i) => (
                               <tr key={i} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
-                                <td className="p-4 text-xs font-mono">{record.siape} {record.siape2 ? `/ ${record.siape2}` : ''}</td>
+                                <td className="p-4 text-xs font-mono whitespace-nowrap">{record.siape} {record.siape2 ? `/ ${record.siape2}` : ''}</td>
                                 <td className="p-4 text-sm font-medium">{record.name}</td>
-                                <td className="p-4 text-xs font-mono">{record.cpf}</td>
+                                <td className="p-4 text-xs font-mono whitespace-nowrap">{record.cpf}</td>
                                 {isStaff && (
-                                  <td className="p-4 text-sm text-right font-mono tracking-tight">
+                                  <td className="p-4 text-sm text-right font-mono tracking-tight whitespace-nowrap">
                                     R$ {record.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                                   </td>
                                 )}
-                                <td className="p-4 text-xs font-mono">{record.contract || '---'}</td>
+                                <td className="p-4 text-xs font-mono whitespace-nowrap font-medium text-zinc-700">{record.contract || '---'}</td>
                               </tr>
                             ))}
                             {diffResults.length > 0 && !searchTerm && (
