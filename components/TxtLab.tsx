@@ -9,6 +9,7 @@ import {
 import { parseTxtContent, TxtParseResult, TxtParseOptions } from '@/lib/txtParser';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+import CopyCpfButton from './CopyCpfButton';
 
 interface TxtLabProps {
   onBack: () => void;
@@ -844,7 +845,10 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                                 {record.name}
                               </td>
                               <td className="py-2.5 px-3 font-mono text-zinc-600 whitespace-nowrap text-[11px]">
-                                {record.cpf}
+                                <div className="inline-flex items-center gap-1.5">
+                                  <span>{record.cpf}</span>
+                                  <CopyCpfButton cpf={record.cpf} />
+                                </div>
                               </td>
                               <td className="py-2.5 px-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap">
                                 {record.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
@@ -948,7 +952,10 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                                       <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs col-span-2">
                                         <span className="text-[10px] text-zinc-400 uppercase font-bold block">Nome do Associado</span>
                                         <span className="font-bold text-zinc-900 block truncate text-xs" title={record.name}>{record.name}</span>
-                                        <span className="text-[10px] font-mono text-zinc-500">CPF: {record.cpf}</span>
+                                        <div className="inline-flex items-center gap-1.5 mt-0.5">
+                                          <span className="text-[10px] font-mono text-zinc-500">CPF: {record.cpf}</span>
+                                          <CopyCpfButton cpf={record.cpf} />
+                                        </div>
                                       </div>
 
                                       <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">

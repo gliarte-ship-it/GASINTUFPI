@@ -17,6 +17,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import TxtLab from '@/components/TxtLab';
+import CopyCpfButton from '@/components/CopyCpfButton';
 
 
 export default function Page() {
@@ -2350,7 +2351,10 @@ export default function Page() {
                           )}
                         </div>
                         <p className="text-sm font-medium text-black line-clamp-1">{record.name}</p>
-                        <p className="text-xs font-mono text-[#9E9E9E]">{record.cpf}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-xs font-mono text-[#9E9E9E]">{record.cpf}</p>
+                          <CopyCpfButton cpf={record.cpf} />
+                        </div>
                         <p className="text-[9px] text-[#D1D1D1] mt-1">
                           Em {new Date(record.created_at).toLocaleDateString('pt-BR')}
                         </p>
@@ -3347,7 +3351,12 @@ export default function Page() {
                                     <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap">{associate.siape || '---'}</td>
                                   )}
                                   <td className="py-3.5 px-4 text-sm font-medium text-zinc-900">{associate.name}</td>
-                                  <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap text-zinc-700">{associate.cpf}</td>
+                                  <td className="py-3.5 px-4 text-xs font-mono whitespace-nowrap text-zinc-700">
+                                    <div className="inline-flex items-center gap-1.5">
+                                      <span>{associate.cpf}</span>
+                                      <CopyCpfButton cpf={associate.cpf} />
+                                    </div>
+                                  </td>
                                   {isStaff && (
                                     <td className="py-3.5 px-4 text-sm font-mono whitespace-nowrap text-right font-medium text-zinc-900">
                                       {associate.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
@@ -3468,7 +3477,12 @@ export default function Page() {
                               <tr key={i} className="border-b border-zinc-50 hover:bg-zinc-50 transition-colors">
                                 <td className="p-4 text-xs font-mono whitespace-nowrap">{record.siape} {record.siape2 ? `/ ${record.siape2}` : ''}</td>
                                 <td className="p-4 text-sm font-medium">{record.name}</td>
-                                <td className="p-4 text-xs font-mono whitespace-nowrap">{record.cpf}</td>
+                                <td className="p-4 text-xs font-mono whitespace-nowrap">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <span>{record.cpf}</span>
+                                    <CopyCpfButton cpf={record.cpf} />
+                                  </div>
+                                </td>
                                 {isStaff && (
                                   <td className="p-4 text-sm text-right font-mono tracking-tight whitespace-nowrap">
                                     R$ {record.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
