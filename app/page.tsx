@@ -12,7 +12,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
-import { parseFile, AssociateRecord } from '@/lib/parser';
+import { parseFile, AssociateRecord, normalizeCpf } from '@/lib/parser';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -1228,12 +1228,14 @@ export default function Page() {
                 .from('associates')
                 .select('cpf')
                 .eq('report_id', report.id)
+                .order('id', { ascending: true })
                 .range(from, from + pageSize - 1);
               
               if (error) throw error;
               if (data && data.length > 0) {
                 data.forEach(d => {
-                  if (d.cpf) cpfs.add(d.cpf.trim());
+                  const norm = normalizeCpf(d.cpf);
+                  if (norm) cpfs.add(norm);
                 });
                 from += pageSize;
                 if (data.length < pageSize) hasMore = false;
@@ -1417,6 +1419,7 @@ export default function Page() {
           .from('associates')
           .select('*')
           .eq('report_id', reportId)
+          .order('id', { ascending: true })
           .range(from, from + pageSize - 1);
           
         if (error) throw error;
@@ -1494,6 +1497,7 @@ export default function Page() {
             .from('associates')
             .select('name, value, cpf, siape, siape2, contract')
             .eq('report_id', id)
+            .order('id', { ascending: true })
             .range(from, from + pageSize - 1);
           
           if (error) throw error;
@@ -1514,27 +1518,31 @@ export default function Page() {
       const olderRecords = await fetchAssociates(olderReport.id);
       const newerRecords = await fetchAssociates(newerReport.id);
 
-      // Using CPF as the comparison key as requested
+      // Using normalized 11-digit CPF as the comparison key (fixes Excel vs TXT formatting differences)
       const olderCpfSet = new Set<string>();
       olderRecords.forEach((r: any) => {
-        if (r.cpf) olderCpfSet.add(r.cpf.trim());
+        const norm = normalizeCpf(r.cpf);
+        if (norm) olderCpfSet.add(norm);
       });
 
       const newerCpfSet = new Set<string>();
       newerRecords.forEach((r: any) => {
-        if (r.cpf) newerCpfSet.add(r.cpf.trim());
+        const norm = normalizeCpf(r.cpf);
+        if (norm) newerCpfSet.add(norm);
       });
 
       let results: any[] = [];
       if (type === 'included') {
-        // Included: Exists in Newer AND NOT in Older (compared by CPF)
+        // Included: Exists in Newer AND NOT in Older (compared by normalized CPF)
         results = newerRecords.filter((r: any) => {
-          return r.cpf && !olderCpfSet.has(r.cpf.trim());
+          const norm = normalizeCpf(r.cpf);
+          return norm && !olderCpfSet.has(norm);
         });
       } else {
-        // Excluded: Exists in Older AND NOT in Newer (compared by CPF)
+        // Excluded: Exists in Older AND NOT in Newer (compared by normalized CPF)
         results = olderRecords.filter((r: any) => {
-          return r.cpf && !newerCpfSet.has(r.cpf.trim());
+          const norm = normalizeCpf(r.cpf);
+          return norm && !newerCpfSet.has(norm);
         });
       }
 

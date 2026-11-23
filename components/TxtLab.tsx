@@ -44,14 +44,38 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
   // Filter & Search
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'match' | 'diff' | 'new'>('all');
+  const [orgaoFilter, setOrgaoFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 15;
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [isLoadingUploaded, setIsLoadingUploaded] = useState(false);
 
   // Derive parse result directly from input and options
   const parseResult = useMemo(() => {
     if (!txtInput.trim()) return null;
     return parseTxtContent(txtInput, { category, contractFormat });
   }, [txtInput, category, contractFormat]);
+
+  // Quick loader for the uploaded file: relanaliticoD8102026-normal-out26_2c8bf108.txt
+  const loadOct2026File = async () => {
+    setIsLoadingUploaded(true);
+    try {
+      const res = await fetch('/assets/aistudio/relanaliticoD8102026-normal-out26_2c8bf108.txt');
+      if (!res.ok) throw new Error('Não foi possível ler o arquivo local');
+      const text = await res.text();
+      setCategory('normal');
+      setFileName('relanaliticoD8102026-normal-out26.txt');
+      setInputMode('file');
+      setTxtInput(text);
+      setCurrentPage(1);
+      setOrgaoFilter('all');
+      setSearchTerm('');
+    } catch (err) {
+      console.error('Erro ao carregar arquivo de Outubro/2026:', err);
+      alert('Erro ao carregar o arquivo anexado de Outubro/2026.');
+    } finally {
+      setIsLoadingUploaded(false);
+    }
+  };
 
   // Load latest report and associates for comparison
   useEffect(() => {
@@ -75,22 +99,38 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
         const report = repData[0];
         setLatestReport(report);
 
-        // Fetch associates of this report
-        const { data: assocData, error: assocError } = await supabase
-          .from('associates')
-          .select('siape, name, cpf, value, contract')
-          .eq('report_id', report.id);
+        // Fetch all associates of this report (paginated past 1000-row Supabase limit)
+        let allAssocData: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
 
-        if (!assocError && assocData) {
-          const map = new Map<string, any>();
-          assocData.forEach((a: any) => {
-            // Index by raw CPF digits or formatted CPF or SIAPE
-            const cleanCpf = (a.cpf || '').replace(/\D/g, '');
-            if (cleanCpf) map.set(cleanCpf, a);
-            if (a.siape) map.set(`siape_${a.siape}`, a);
-          });
-          setDbAssociatesMap(map);
+        while (hasMore) {
+          const { data: assocData, error: assocError } = await supabase
+            .from('associates')
+            .select('siape, name, cpf, value, contract')
+            .eq('report_id', report.id)
+            .order('id', { ascending: true })
+            .range(from, from + pageSize - 1);
+
+          if (assocError) break;
+          if (assocData && assocData.length > 0) {
+            allAssocData = [...allAssocData, ...assocData];
+            from += pageSize;
+            if (assocData.length < pageSize) hasMore = false;
+          } else {
+            hasMore = false;
+          }
         }
+
+        const map = new Map<string, any>();
+        allAssocData.forEach((a: any) => {
+          const digits = String(a.cpf || '').replace(/\D/g, '');
+          const cleanCpf = digits ? digits.padStart(11, '0') : '';
+          if (cleanCpf) map.set(cleanCpf, a);
+          if (a.siape) map.set(`siape_${a.siape}`, a);
+        });
+        setDbAssociatesMap(map);
       } catch (err) {
         console.error('Erro ao carregar dados do banco para comparação:', err);
       } finally {
@@ -115,28 +155,33 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
     reader.readAsText(file);
   };
 
-  // Export to Excel for manual validation
+  // Export to Excel with full descriptions by extension for each code
   const exportToExcel = () => {
     if (!parseResult || parseResult.records.length === 0) return;
 
     const data = parseResult.records.map((r, idx) => ({
       'Nº': idx + 1,
-      'SIAPE Pensionista': r.siape,
-      ...(r.siape2 ? { 'SIAPE Instituidor': r.siape2 } : {}),
-      'NOME': r.name,
+      'ÓRGÃO': r.orgaoDescription || `${r.orgao || '26279'} - Fundação Universidade Federal do Piauí (UFPI)`,
+      'SIAPE': r.siape,
+      ...(r.siape2 ? { 'SIAPE INSTITUIDOR': r.siape2 } : {}),
+      'NOME DO ASSOCIADO': r.name,
       'CPF': r.cpf,
       'VALOR (R$)': r.value,
       'CONTRATO': r.contract,
-      'RUBRICA': r.rubrica || '',
-      'SITUAÇÃO': r.situacao || '',
-      'CONTRATO COMPLETO': r.contractFull || '',
-      'LINHA ORIGINAL': r.rawLine || ''
+      'RUBRICA': r.rubricaDescription || `${r.rubrica || '346661'} - Mensalidade Sindical SINTUFPI`,
+      'UNIDADE PAGADORA (UPAG)': r.upagDescription || `${r.upag || '2600100'} - Unidade Pagadora Central / Reitoria UFPI`,
+      'SITUAÇÃO FUNCIONAL': r.situacaoDescription || r.situacao || 'ESTAVEL - Servidor Público Civil Estável',
+      'UF DA LOTAÇÃO': r.ufDescription || r.uf || 'PI - Piauí',
+      'CÓDIGO DE CONSIGNAÇÃO': r.consignacaoDescription || `${r.codigoConsignacao || '000154048'} - Consignatária Geral SINTUFPI`,
+      'CONTRATO COMPLETO': r.contractFull || r.contract || '',
+      'LINHA ORIGINAL TXT': r.rawLine || ''
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Associados_TXT');
-    XLSX.writeFile(workbook, `teste_extracao_txt_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Relatorio_TXT_Associados');
+    const safeName = fileName ? fileName.replace(/\.[^/.]+$/, '') : 'relatorio_analitico_txt';
+    XLSX.writeFile(workbook, `${safeName}_completo_por_extenso_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // Filtered & enriched records
@@ -175,6 +220,17 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
     });
   }, [parseResult, dbAssociatesMap]);
 
+  // List of distinct Órgãos present in current data
+  const availableOrgaos = useMemo(() => {
+    if (!enrichedRecords.length) return [];
+    const map = new Map<string, number>();
+    enrichedRecords.forEach(r => {
+      const org = r.orgao || '26279';
+      map.set(org, (map.get(org) || 0) + 1);
+    });
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [enrichedRecords]);
+
   const filteredRecords = useMemo(() => {
     return enrichedRecords.filter(r => {
       // Search term
@@ -183,9 +239,19 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
         const matches = 
           r.name.toLowerCase().includes(term) ||
           r.siape.toLowerCase().includes(term) ||
+          (r.siape2 && r.siape2.toLowerCase().includes(term)) ||
           r.cpf.toLowerCase().includes(term) ||
-          r.contract.toLowerCase().includes(term);
+          (r.rawCpf && r.rawCpf.includes(term)) ||
+          r.contract.toLowerCase().includes(term) ||
+          (r.orgao && r.orgao.toLowerCase().includes(term)) ||
+          (r.rubrica && r.rubrica.toLowerCase().includes(term)) ||
+          (r.upag && r.upag.toLowerCase().includes(term));
         if (!matches) return false;
+      }
+
+      // Órgão filter
+      if (orgaoFilter !== 'all' && r.orgao !== orgaoFilter) {
+        return false;
       }
 
       // Status filter
@@ -195,7 +261,7 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
 
       return true;
     });
-  }, [enrichedRecords, searchTerm, filterStatus]);
+  }, [enrichedRecords, searchTerm, orgaoFilter, filterStatus]);
 
   const totalPages = Math.ceil(filteredRecords.length / pageSize) || 1;
   const currentRecords = filteredRecords.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -205,12 +271,32 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
     const matchCount = enrichedRecords.filter(r => r.comparisonStatus === 'match').length;
     const diffCount = enrichedRecords.filter(r => r.comparisonStatus === 'diff').length;
     const newCount = enrichedRecords.filter(r => r.comparisonStatus === 'new').length;
+
+    // Breakdown counts
+    const orgaoMap = new Map<string, number>();
+    const rubricaMap = new Map<string, number>();
+    const upagMap = new Map<string, number>();
+
+    enrichedRecords.forEach(r => {
+      const org = r.orgao || '26279';
+      orgaoMap.set(org, (orgaoMap.get(org) || 0) + 1);
+
+      const rub = r.rubrica || '346661';
+      rubricaMap.set(rub, (rubricaMap.get(rub) || 0) + 1);
+
+      const up = r.upag || '2600100';
+      upagMap.set(up, (upagMap.get(up) || 0) + 1);
+    });
+
     return {
       total: enrichedRecords.length,
       matchCount,
       diffCount,
       newCount,
-      totalValue: parseResult?.totalValue || 0
+      totalValue: parseResult?.totalValue || 0,
+      orgaos: Array.from(orgaoMap.entries()).sort((a, b) => b[1] - a[1]),
+      rubricas: Array.from(rubricaMap.entries()),
+      upags: Array.from(upagMap.entries())
     };
   }, [enrichedRecords, parseResult]);
 
@@ -252,10 +338,49 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                 className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-900/30 flex items-center gap-2 transition-all"
               >
                 <Download className="w-4 h-4" />
-                Baixar Excel da Extração
+                Baixar Excel c/ Descrições por Extenso
               </button>
             )}
           </div>
+        </div>
+      </div>
+
+      {/* Quick Access Card for Uploaded October 2026 Normal File */}
+      <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-indigo-950 rounded-2xl p-4 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-white shadow-md">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">Arquivo Anexado: Outubro/2026 Normal</span>
+              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono border border-emerald-500/30 font-bold">1.268 registros</span>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono border border-indigo-500/30 font-bold">R$ 103.072,87</span>
+            </div>
+            <p className="text-xs text-zinc-300 mt-1">
+              Pronto para visualização isolada com os campos solicitados: <strong>Órgão</strong> (Item 1), <strong>Rubrica</strong> (Item 4) e <strong>UPAG</strong> (Item 7).
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap shrink-0">
+          <button
+            onClick={loadOct2026File}
+            disabled={isLoadingUploaded}
+            className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all shrink-0 disabled:opacity-50"
+          >
+            {isLoadingUploaded ? <RefreshCw className="w-4 h-4 animate-spin text-slate-950" /> : <Eye className="w-4 h-4 text-slate-950" />}
+            <span>Visualizar no Lab TXT</span>
+          </button>
+
+          <a
+            href="/downloads/relatorio_analitico_outubro2026_normal_completo.xlsx"
+            download="relatorio_analitico_outubro2026_normal_completo.xlsx"
+            className="px-4 py-2.5 bg-white hover:bg-zinc-100 text-zinc-900 font-bold text-xs rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all shrink-0"
+          >
+            <Download className="w-4 h-4 text-emerald-600" />
+            <span>Baixar Excel Completo (.xlsx)</span>
+          </a>
         </div>
       </div>
 
@@ -475,37 +600,90 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
 
       {/* Metrics Row */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
-            <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Registros Lidos</span>
-            <span className="text-2xl font-black text-zinc-800">{stats.total}</span>
-            <span className="text-[10px] text-zinc-500 block mt-0.5">associados extraídos</span>
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block">Registros Lidos</span>
+              <span className="text-2xl font-black text-zinc-800">{stats.total}</span>
+              <span className="text-[10px] text-zinc-500 block mt-0.5">associados extraídos</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+              <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Conferem 100%</span>
+              <span className="text-2xl font-black text-emerald-600">{stats.matchCount}</span>
+              <span className="text-[10px] text-zinc-500 block mt-0.5">valores idênticos à base</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+              <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">Valores Alterados</span>
+              <span className="text-2xl font-black text-amber-600">{stats.diffCount}</span>
+              <span className="text-[10px] text-zinc-500 block mt-0.5">com variação no valor</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
+              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Novos na Folha</span>
+              <span className="text-2xl font-black text-blue-600">{stats.newCount}</span>
+              <span className="text-[10px] text-zinc-500 block mt-0.5">não estavam no mês ant.</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm col-span-2 md:col-span-1">
+              <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Total Acumulado</span>
+              <span className="text-xl font-black text-indigo-900">
+                {stats.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+              <span className="text-[10px] text-zinc-500 block mt-0.5">soma de mensalidades</span>
+            </div>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
-            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Conferem 100%</span>
-            <span className="text-2xl font-black text-emerald-600">{stats.matchCount}</span>
-            <span className="text-[10px] text-zinc-500 block mt-0.5">valores idênticos à base</span>
-          </div>
+          {/* 3 Requested Extra Fields Breakdown (Item 1: Órgão, Item 4: Rubrica, Item 7: UPAG) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-sm border border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Item 1: Órgãos Identificados</span>
+                <span className="text-[10px] text-slate-400">{stats.orgaos.length} órgão(s)</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {stats.orgaos.map(([code, count]) => (
+                  <span key={code} className="px-2.5 py-1 rounded-xl text-xs font-mono bg-white/10 text-white border border-white/10 flex items-center gap-1.5">
+                    <strong className="text-emerald-300 font-bold">{code}</strong>
+                    <span className="text-slate-300 text-[11px]">{code === '26279' ? '(UFPI)' : code === '26455' || code === '26449' ? '(IFPI)' : ''}</span>
+                    <span className="text-emerald-400 font-bold bg-white/10 px-1.5 py-0.2 rounded text-[11px]">{count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
-            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider block">Valores Alterados</span>
-            <span className="text-2xl font-black text-amber-600">{stats.diffCount}</span>
-            <span className="text-[10px] text-zinc-500 block mt-0.5">com variação no valor</span>
-          </div>
+            <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-sm border border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Item 4: Rubrica na Folha</span>
+                <span className="text-[10px] text-slate-400">{stats.rubricas.length} código(s)</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {stats.rubricas.map(([code, count]) => (
+                  <span key={code} className="px-2.5 py-1 rounded-xl text-xs font-mono bg-white/10 text-white border border-white/10 flex items-center gap-1.5">
+                    <strong className="text-indigo-300 font-bold">{code}</strong>
+                    <span className="text-slate-300 text-[11px]">Mensalidade Sindical</span>
+                    <span className="text-indigo-400 font-bold bg-white/10 px-1.5 py-0.2 rounded text-[11px]">{count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm">
-            <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Novos na Folha</span>
-            <span className="text-2xl font-black text-blue-600">{stats.newCount}</span>
-            <span className="text-[10px] text-zinc-500 block mt-0.5">não estavam no mês ant.</span>
-          </div>
-
-          <div className="bg-white p-4 rounded-2xl border border-zinc-200 shadow-sm col-span-2 md:col-span-1">
-            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">Total Acumulado</span>
-            <span className="text-xl font-black text-indigo-900">
-              {stats.totalValue.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-            </span>
-            <span className="text-[10px] text-zinc-500 block mt-0.5">soma de mensalidades</span>
+            <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-sm border border-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider">Item 7: Unidade Pagadora (UPAG)</span>
+                <span className="text-[10px] text-slate-400">{stats.upags.length} unidade(s)</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {stats.upags.map(([code, count]) => (
+                  <span key={code} className="px-2.5 py-1 rounded-xl text-xs font-mono bg-white/10 text-white border border-white/10 flex items-center gap-1.5">
+                    <strong className="text-amber-300 font-bold">{code}</strong>
+                    <span className="text-slate-300 text-[11px]">UPAG Específica</span>
+                    <span className="text-amber-400 font-bold bg-white/10 px-1.5 py-0.2 rounded text-[11px]">{count}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -522,7 +700,7 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
               <div>
                 <h3 className="text-base font-bold text-zinc-900">Resultado da Extração TXT</h3>
                 <p className="text-xs text-zinc-500">
-                  {filteredRecords.length} associados exibidos
+                  {filteredRecords.length} associados exibidos (Página {currentPage} de {totalPages})
                   {parseResult.ignoredLines.length > 0 && ` (${parseResult.ignoredLines.length} linhas de cabeçalho/rodapé ignoradas)`}
                 </p>
               </div>
@@ -534,12 +712,28 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                 <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
-                  placeholder="Filtrar por nome, siape, cpf..."
+                  placeholder="Buscar nome, siape, cpf, órgão..."
                   value={searchTerm}
                   onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                  className="pl-9 pr-3 py-2 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-56 text-zinc-800"
+                  className="pl-9 pr-3 py-2 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 w-52 text-zinc-800"
                 />
               </div>
+
+              {/* Órgão filter */}
+              {availableOrgaos.length > 1 && (
+                <select
+                  value={orgaoFilter}
+                  onChange={(e) => { setOrgaoFilter(e.target.value); setCurrentPage(1); }}
+                  className="py-2 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-zinc-700 font-medium"
+                >
+                  <option value="all">Todos os Órgãos ({enrichedRecords.length})</option>
+                  {availableOrgaos.map(([code, count]) => (
+                    <option key={code} value={code}>
+                      Órgão {code} {code === '26279' ? '(UFPI)' : '(IFPI)'} - {count}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {/* Status filter */}
               <select
@@ -547,10 +741,25 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                 onChange={(e) => { setFilterStatus(e.target.value as any); setCurrentPage(1); }}
                 className="py-2 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-zinc-700 font-medium"
               >
-                <option value="all">Todos os Registros</option>
+                <option value="all">Todos os Status</option>
                 <option value="match">Apenas Conferem 100%</option>
                 <option value="diff">Apenas Valores Alterados</option>
                 <option value="new">Apenas Novos Associados</option>
+              </select>
+
+              {/* Page size selector */}
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                className="py-2 px-3 text-xs bg-zinc-50 border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-zinc-700 font-medium"
+                title="Itens por página"
+              >
+                <option value={15}>15 / pág</option>
+                <option value={25}>25 / pág</option>
+                <option value={50}>50 / pág</option>
+                <option value={100}>100 / pág</option>
+                <option value={500}>500 / pág</option>
+                <option value={2000}>Todos ({filteredRecords.length})</option>
               </select>
             </div>
           </div>
@@ -558,30 +767,33 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
           {/* Table */}
           {(() => {
             const isPensionistaMode = category === 'pensionista' || currentRecords.some(r => !!r.siape2);
-            const totalCols = compareWithDb ? (isPensionistaMode ? 9 : 8) : (isPensionistaMode ? 8 : 7);
+            const totalCols = compareWithDb ? (isPensionistaMode ? 12 : 11) : (isPensionistaMode ? 11 : 10);
 
             return (
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr className="bg-zinc-50/70 border-b border-zinc-200/80 text-[11px] font-bold uppercase tracking-wider text-zinc-500">
-                      <th className="py-3 px-4 w-12 text-center">Nº</th>
+                      <th className="py-3 px-3 w-10 text-center">Nº</th>
+                      <th className="py-3 px-3 whitespace-nowrap">Órgão</th>
                       {isPensionistaMode ? (
                         <>
-                          <th className="py-3 px-4 whitespace-nowrap">Siape Pensionista</th>
-                          <th className="py-3 px-4 whitespace-nowrap">Siape Instituidor</th>
+                          <th className="py-3 px-3 whitespace-nowrap">Siape Pensionista</th>
+                          <th className="py-3 px-3 whitespace-nowrap">Siape Instituidor</th>
                         </>
                       ) : (
-                        <th className="py-3 px-4">SIAPE</th>
+                        <th className="py-3 px-3 whitespace-nowrap">SIAPE</th>
                       )}
-                      <th className="py-3 px-4">Nome do Associado</th>
-                      <th className="py-3 px-4">CPF</th>
-                      <th className="py-3 px-4 text-right">Valor Extraído</th>
-                      <th className="py-3 px-4">Contrato</th>
+                      <th className="py-3 px-3">Nome do Associado</th>
+                      <th className="py-3 px-3 whitespace-nowrap">CPF</th>
+                      <th className="py-3 px-3 text-right whitespace-nowrap">Valor Extraído</th>
+                      <th className="py-3 px-3 whitespace-nowrap">Contrato</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap">Rubrica</th>
+                      <th className="py-3 px-3 text-center whitespace-nowrap">UPAG</th>
                       {compareWithDb && (
-                        <th className="py-3 px-4">Comparação c/ Último Mês</th>
+                        <th className="py-3 px-3 whitespace-nowrap">Comparação c/ Último Mês</th>
                       )}
-                      <th className="py-3 px-4 text-center">Linha TXT</th>
+                      <th className="py-3 px-3 text-center w-10">Linha</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-100">
@@ -599,144 +811,191 @@ export default function TxtLab({ onBack, userEmail }: TxtLabProps) {
                         return (
                           <React.Fragment key={rowNumber}>
                             <tr className="hover:bg-indigo-50/30 transition-colors">
-                              <td className="py-3 px-4 text-center font-mono text-zinc-400 text-[11px]">
+                              <td className="py-2.5 px-3 text-center font-mono text-zinc-400 text-[11px]">
                                 {rowNumber}
+                              </td>
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span 
+                                  className={`font-mono text-[11px] font-bold px-2 py-0.5 rounded border ${
+                                    record.orgao === '26279' 
+                                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                                      : 'bg-amber-50 text-amber-800 border-amber-200'
+                                  }`} 
+                                  title={record.orgao === '26279' ? '26279 - UFPI' : record.orgao === '26455' || record.orgao === '26449' ? `${record.orgao} - IFPI` : record.orgao}
+                                >
+                                  {record.orgao || '26279'}
+                                </span>
                               </td>
                               {isPensionistaMode ? (
                                 <>
-                                  <td className="py-3 px-4 font-mono font-bold text-zinc-800">
+                                  <td className="py-2.5 px-3 font-mono font-bold text-zinc-800 whitespace-nowrap">
                                     {record.siape}
                                   </td>
-                                  <td className="py-3 px-4 font-mono text-zinc-600">
+                                  <td className="py-2.5 px-3 font-mono text-zinc-600 whitespace-nowrap">
                                     {record.siape2 || '---'}
                                   </td>
                                 </>
                               ) : (
-                                <td className="py-3 px-4 font-mono font-bold text-zinc-800">
+                                <td className="py-2.5 px-3 font-mono font-bold text-zinc-800 whitespace-nowrap">
                                   {record.siape}
                                 </td>
                               )}
-                              <td className="py-3 px-4 font-medium text-zinc-900">
+                              <td className="py-2.5 px-3 font-medium text-zinc-900 whitespace-nowrap max-w-[280px] truncate" title={record.name}>
                                 {record.name}
                               </td>
-                              <td className="py-3 px-4 font-mono text-zinc-600 whitespace-nowrap">
+                              <td className="py-2.5 px-3 font-mono text-zinc-600 whitespace-nowrap text-[11px]">
                                 {record.cpf}
                               </td>
-                              <td className="py-3 px-4 text-right font-mono font-bold text-zinc-900 whitespace-nowrap">
+                              <td className="py-2.5 px-3 text-right font-mono font-bold text-zinc-900 whitespace-nowrap">
                                 {record.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                               </td>
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            <span className="font-mono bg-zinc-100 text-zinc-800 px-2 py-0.5 rounded text-[11px] border border-zinc-200 whitespace-nowrap">
-                              {record.contract}
-                            </span>
-                          </td>
-
-                          {/* Database comparison column */}
-                          {compareWithDb && (
-                            <td className="py-3 px-4">
-                              {record.comparisonStatus === 'match' && (
-                                <div className="flex items-center gap-1.5 text-emerald-700">
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                  <span className="text-[11px] font-semibold">100% Idêntico</span>
-                                </div>
-                              )}
-
-                              {record.comparisonStatus === 'diff' && (
-                                <div className="space-y-0.5">
-                                  <div className="flex items-center gap-1 text-amber-700">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                                    <span className="text-[11px] font-bold">
-                                      {record.valueDiff > 0 ? `+ R$ ${record.valueDiff.toFixed(2)}` : `- R$ ${Math.abs(record.valueDiff).toFixed(2)}`}
-                                    </span>
-                                  </div>
-                                  <div className="text-[10px] text-zinc-400">
-                                    Anterior: R$ {record.dbValue.toFixed(2)}
-                                  </div>
-                                </div>
-                              )}
-
-                              {record.comparisonStatus === 'new' && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                                  Novo Associado
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                <span className="font-mono bg-zinc-100 text-zinc-800 px-2 py-0.5 rounded text-[11px] border border-zinc-200 whitespace-nowrap">
+                                  {record.contract}
                                 </span>
-                              )}
-                            </td>
-                          )}
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span className="font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded text-[11px] font-bold border border-indigo-200">
+                                  {record.rubrica || '346661'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                <span className="font-mono bg-amber-50 text-amber-800 px-2 py-0.5 rounded text-[11px] font-bold border border-amber-200">
+                                  {record.upag || '2600100'}
+                                </span>
+                              </td>
 
-                          {/* Inspect button */}
-                          <td className="py-3 px-4 text-center">
-                            <button
-                              onClick={() => setExpandedRow(isExpanded ? null : rowNumber)}
-                              className="p-1 hover:bg-zinc-200 rounded-lg text-zinc-500 hover:text-black transition-all"
-                              title="Ver linha bruta original e decomposição"
-                            >
-                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                            </button>
-                          </td>
-                        </tr>
-
-                        {/* Expanded details row */}
-                        {isExpanded && (
-                          <tr className="bg-zinc-50/80">
-                            <td colSpan={totalCols} className="p-4 border-y border-zinc-200 text-xs">
-                              <div className="space-y-3 max-w-4xl">
-                                <div className="flex items-center justify-between">
-                                  <span className="font-bold text-zinc-700 text-xs uppercase tracking-wider">
-                                    Decomposição da Linha #{record.lineNumber} do TXT
-                                  </span>
-                                  <span className="text-[11px] text-zinc-400 font-mono">
-                                    Tamanho: {record.rawLine?.length || 0} caracteres
-                                  </span>
-                                </div>
-
-                                <div className="p-3 bg-zinc-900 text-emerald-400 font-mono text-[11px] rounded-xl overflow-x-auto">
-                                  {record.rawLine}
-                                </div>
-
-                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
-                                  <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                    <span className="text-[10px] text-zinc-400 uppercase font-bold block">Siape Pensionista</span>
-                                    <span className="font-mono font-bold text-zinc-800">{record.siape}</span>
-                                  </div>
-
-                                  {record.siape2 && (
-                                    <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                      <span className="text-[10px] text-zinc-400 uppercase font-bold block">Siape Instituidor</span>
-                                      <span className="font-mono font-bold text-indigo-700">{record.siape2}</span>
+                              {/* Database comparison column */}
+                              {compareWithDb && (
+                                <td className="py-2.5 px-3 whitespace-nowrap">
+                                  {record.comparisonStatus === 'match' && (
+                                    <div className="flex items-center gap-1.5 text-emerald-700">
+                                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                      <span className="text-[11px] font-semibold">100% Idêntico</span>
                                     </div>
                                   )}
 
-                                  <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                    <span className="text-[10px] text-zinc-400 uppercase font-bold block">Rubrica</span>
-                                    <span className="font-mono font-bold text-zinc-800">{record.rubrica || '---'}</span>
-                                  </div>
+                                  {record.comparisonStatus === 'diff' && (
+                                    <div className="space-y-0.5">
+                                      <div className="flex items-center gap-1 text-amber-700">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                                        <span className="text-[11px] font-bold">
+                                          {record.valueDiff > 0 ? `+ R$ ${record.valueDiff.toFixed(2)}` : `- R$ ${Math.abs(record.valueDiff).toFixed(2)}`}
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] text-zinc-400">
+                                        Anterior: R$ {record.dbValue.toFixed(2)}
+                                      </div>
+                                    </div>
+                                  )}
 
-                                  <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                    <span className="text-[10px] text-zinc-400 uppercase font-bold block">Situação</span>
-                                    <span className="font-bold text-zinc-800 truncate block">{record.situacao || '---'}</span>
-                                  </div>
+                                  {record.comparisonStatus === 'new' && (
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                      Novo Associado
+                                    </span>
+                                  )}
+                                </td>
+                              )}
 
-                                  <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                    <span className="text-[10px] text-zinc-400 uppercase font-bold block">Contrato TXT</span>
-                                    <span className="font-mono font-bold text-indigo-600 truncate block">{record.contractFull || record.contract}</span>
-                                  </div>
+                              {/* Inspect button */}
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  onClick={() => setExpandedRow(isExpanded ? null : rowNumber)}
+                                  className="p-1 hover:bg-zinc-200 rounded-lg text-zinc-500 hover:text-black transition-all"
+                                  title="Ver decomposição de campos e linha original"
+                                >
+                                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                </button>
+                              </td>
+                            </tr>
 
-                                  <div className="bg-white p-2.5 rounded-xl border border-zinc-200">
-                                    <span className="text-[10px] text-zinc-400 uppercase font-bold block">Contrato Base</span>
-                                    <span className="font-mono font-bold text-zinc-700 truncate block">{record.dbContract || 'Novo'}</span>
+                            {/* Expanded details row */}
+                            {isExpanded && (
+                              <tr className="bg-zinc-50/80">
+                                <td colSpan={totalCols} className="p-4 border-y border-zinc-200 text-xs">
+                                  <div className="space-y-3 max-w-5xl">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-zinc-800 text-xs uppercase tracking-wider flex items-center gap-2">
+                                        <Layers className="w-4 h-4 text-indigo-600" />
+                                        Decomposição Completa da Linha #{record.lineNumber} do TXT
+                                      </span>
+                                      <span className="text-[11px] text-zinc-400 font-mono">
+                                        Tamanho: {record.rawLine?.length || 0} caracteres
+                                      </span>
+                                    </div>
+
+                                    <div className="p-3 bg-zinc-900 text-emerald-400 font-mono text-[11px] rounded-xl overflow-x-auto border border-zinc-800">
+                                      {record.rawLine}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-2.5 text-xs">
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-emerald-600 uppercase font-bold block">1. Órgão</span>
+                                        <span className="font-mono font-bold text-zinc-900 text-xs block">{record.orgao || '26279'}</span>
+                                        <span className="text-[10px] text-zinc-500 block truncate font-medium" title={record.orgaoDescription}>
+                                          {record.orgaoDescription?.replace(/^\d+\s*-\s*/, '') || (record.orgao === '26279' ? 'UFPI' : 'IFPI')}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">SIAPE</span>
+                                        <span className="font-mono font-bold text-zinc-900 text-xs block">{record.siape}</span>
+                                        {record.siape2 && (
+                                          <span className="text-[10px] text-indigo-600 font-mono block">Inst: {record.siape2}</span>
+                                        )}
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs col-span-2">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Nome do Associado</span>
+                                        <span className="font-bold text-zinc-900 block truncate text-xs" title={record.name}>{record.name}</span>
+                                        <span className="text-[10px] font-mono text-zinc-500">CPF: {record.cpf}</span>
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-indigo-600 uppercase font-bold block">4. Rubrica</span>
+                                        <span className="font-mono font-bold text-indigo-700 text-xs block">{record.rubrica || '346661'}</span>
+                                        <span className="text-[10px] text-zinc-500 block truncate font-medium" title={record.rubricaDescription}>
+                                          {record.rubricaDescription?.replace(/^\d+\s*-\s*/, '') || 'Mensalidade SINTUFPI'}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-amber-600 uppercase font-bold block">7. UPAG</span>
+                                        <span className="font-mono font-bold text-amber-800 text-xs block">{record.upag || '2600100'}</span>
+                                        <span className="text-[10px] text-zinc-500 block truncate font-medium" title={record.upagDescription}>
+                                          {record.upagDescription?.replace(/^\d+\s*-\s*/, '') || 'UPAG Central'}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Contrato / Situação</span>
+                                        <span className="font-mono font-bold text-zinc-800 text-xs truncate block">{record.contractFull || record.contract}</span>
+                                        <span className="text-[10px] text-zinc-500 block truncate" title={record.situacaoDescription}>
+                                          {record.situacaoDescription?.replace(/^[A-Z\s]+\s*-\s*/, '') || record.situacao || 'ESTÁVEL'}
+                                        </span>
+                                      </div>
+
+                                      <div className="bg-white p-2.5 rounded-xl border border-zinc-200 shadow-2xs">
+                                        <span className="text-[10px] text-zinc-400 uppercase font-bold block">Valor Líquido</span>
+                                        <span className="font-mono font-bold text-emerald-700 text-xs block">
+                                          {record.value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-500 block font-mono">
+                                          {record.ufDescription || record.uf || 'PI'}
+                                        </span>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             );
           })()}
 

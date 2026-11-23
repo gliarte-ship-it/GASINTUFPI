@@ -38,6 +38,24 @@ const cleanValue = (val: any): number => {
   return isNaN(parsed) ? 0 : parsed;
 };
 
+export const normalizeCpf = (cpf: string | null | undefined): string => {
+  if (!cpf) return '';
+  const digits = String(cpf).replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.padStart(11, '0');
+};
+
+export const formatCpf = (val: any): string => {
+  const str = String(val || '').trim();
+  if (!str) return '';
+  const digits = str.replace(/\D/g, '');
+  if (digits.length >= 9 && digits.length <= 11) {
+    const padded = digits.padStart(11, '0');
+    return `${padded.substring(0, 3)}.${padded.substring(3, 6)}.${padded.substring(6, 9)}-${padded.substring(9, 11)}`;
+  }
+  return str;
+};
+
 interface ExcelColumnMap {
   siapeIdx: number;
   siape2Idx: number;
@@ -143,7 +161,7 @@ async function parseExcel(file: File, category: string): Promise<AssociateRecord
           
           const name = String(row[colMap.nameIdx] || '').trim();
           const siape = String(row[colMap.siapeIdx] || '').trim();
-          const cpf = String(row[colMap.cpfIdx] || '').trim();
+          const cpf = formatCpf(row[colMap.cpfIdx]);
           const value = cleanValue(row[colMap.valueIdx]);
           const contract = String(row[colMap.contractIdx] || '').trim();
 

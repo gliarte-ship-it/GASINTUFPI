@@ -1,5 +1,31 @@
 import { AssociateRecord } from './parser';
 
+export const ORGAO_DESCRIPTIONS: Record<string, string> = {
+  '26279': '26279 - Fundação Universidade Federal do Piauí (UFPI)',
+  '26455': '26455 - Instituto Federal do Piauí (IFPI - Reitoria / Campi)',
+  '26449': '26449 - Instituto Federal do Piauí (IFPI)',
+};
+
+export const RUBRICA_DESCRIPTIONS: Record<string, string> = {
+  '346661': '346661 - Mensalidade Sindical SINTUFPI (Consignação em Folha)',
+};
+
+export const UPAG_DESCRIPTIONS: Record<string, string> = {
+  '2600100': '2600100 - Unidade Pagadora Central / Reitoria UFPI',
+};
+
+export const SITUACAO_DESCRIPTIONS: Record<string, string> = {
+  'ESTAVEL': 'ESTAVEL - Servidor Público Civil Estável (Ativo / Aposentado)',
+  'NAO ESTAVEL': 'NAO ESTAVEL - Servidor Não Estável / Beneficiário de Pensão',
+};
+
+export const CONSIGNACAO_DESCRIPTIONS: Record<string, string> = {
+  '000154048': '000154048 - Consignatária Geral SINTUFPI',
+  '000150237': '000150237 - Convênio Saúde / Plano SINTUFPI',
+  '000158719': '000158719 - Convênio Assistencial / Odonto SINTUFPI',
+  '000156680': '000156680 - Convênio Especial SINTUFPI',
+};
+
 export interface TxtParseOptions {
   category?: 'normal' | 'pensionista';
   contractFormat?: 'full' | 'short' | 'code';
@@ -7,9 +33,19 @@ export interface TxtParseOptions {
 
 export interface TxtParseResult {
   records: (AssociateRecord & {
+    orgao?: string;
+    orgaoDescription?: string;
+    upag?: string;
+    upagDescription?: string;
+    uf?: string;
+    ufDescription?: string;
     rawCpf?: string;
     rubrica?: string;
+    rubricaDescription?: string;
     situacao?: string;
+    situacaoDescription?: string;
+    codigoConsignacao?: string;
+    consignacaoDescription?: string;
     contractFull?: string;
     contractShort?: string;
     contractCode?: string;
@@ -68,8 +104,22 @@ export function parseTxtContent(content: string, options: TxtParseOptions = {}):
 
     // Must be a substantial data line
     if (trimmed.length >= 90) {
-      const piIdx = trimmed.indexOf('PI');
-      const isPensionistaLine = categoryOption === 'pensionista' || piIdx === 29;
+      const normalUf = trimmed.substring(21, 23);
+      const normalCpfCandidate = trimmed.substring(73, 84).trim();
+      const pensUf = trimmed.substring(29, 31);
+      const pensCpfCandidate = trimmed.substring(76, 87).trim();
+
+      const matchesNormalLayout = /^[A-Z]{2}$/.test(normalUf) && /^\d{11}$/.test(normalCpfCandidate);
+      const matchesPensLayout = /^[A-Z]{2}$/.test(pensUf) && /^\d{11}$/.test(pensCpfCandidate);
+
+      let isPensionistaLine = false;
+      if (categoryOption === 'pensionista') {
+        isPensionistaLine = matchesPensLayout || !matchesNormalLayout;
+      } else if (categoryOption === 'normal') {
+        isPensionistaLine = !matchesNormalLayout && matchesPensLayout;
+      } else {
+        isPensionistaLine = matchesPensLayout && !matchesNormalLayout;
+      }
 
       let siape = '';
       let siape2: string | undefined = undefined;
@@ -81,7 +131,7 @@ export function parseTxtContent(content: string, options: TxtParseOptions = {}):
       let situacao = '';
       let afterSituacao = '';
 
-      if (isPensionistaLine && (piIdx === 29 || categoryOption === 'pensionista')) {
+      if (isPensionistaLine) {
         // Pensionista line layout
         siape = trimmed.substring(5, 12).trim();
         siape2 = trimmed.substring(12, 20).trim();
@@ -128,8 +178,13 @@ export function parseTxtContent(content: string, options: TxtParseOptions = {}):
         chosenContract = contractCode;
       }
 
-      // Valid associate check: must have name, siape, and 11-digit CPF
-      if (name && siape && rawCpf.length === 11) {
+      // Valid associate check: must have name, siape, and 11-digit numeric CPF
+      if (name && siape && /^\d{11}$/.test(rawCpf)) {
+        const orgao = trimmed.substring(0, 5);
+        const upag = trimmed.substring(trimmed.length - 7);
+        const uf = isPensionistaLine ? trimmed.substring(29, 31) : trimmed.substring(21, 23);
+        const ufDescription = uf === 'PI' ? 'PI - Piauí' : uf === 'CE' ? 'CE - Ceará' : uf === 'MA' ? 'MA - Maranhão' : uf;
+
         records.push({
           siape,
           siape2,
@@ -139,8 +194,18 @@ export function parseTxtContent(content: string, options: TxtParseOptions = {}):
           value,
           contract: chosenContract,
           pensionista: isPensionistaLine,
+          orgao,
+          orgaoDescription: ORGAO_DESCRIPTIONS[orgao] || `${orgao} - Órgão Federal`,
+          upag,
+          upagDescription: UPAG_DESCRIPTIONS[upag] || `${upag} - Unidade Pagadora`,
+          uf,
+          ufDescription,
           rubrica,
+          rubricaDescription: RUBRICA_DESCRIPTIONS[rubrica] || `${rubrica} - Mensalidade Sindical SINTUFPI`,
           situacao,
+          situacaoDescription: SITUACAO_DESCRIPTIONS[situacao] || situacao,
+          codigoConsignacao: code1,
+          consignacaoDescription: CONSIGNACAO_DESCRIPTIONS[code1] || `${code1} - Consignação SINTUFPI`,
           contractFull,
           contractShort,
           contractCode,
